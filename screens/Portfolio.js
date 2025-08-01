@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { BarChart } from 'react-native-chart-kit';
+// Charts removed for better compatibility
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -92,12 +92,13 @@ const Portfolio = () => {
     ]
   };
 
-  const performanceData = {
-    labels: ['1W', '1M', '3M', '6M', '1Y'],
-    datasets: [{
-      data: [1.2, 3.5, 8.2, 12.1, 14.03]
-    }]
-  };
+  const performanceData = [
+    { period: '1W', value: 1.2 },
+    { period: '1M', value: 3.5 },
+    { period: '3M', value: 8.2 },
+    { period: '6M', value: 12.1 },
+    { period: '1Y', value: 14.03 }
+  ];
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
@@ -230,26 +231,15 @@ const Portfolio = () => {
               </View>
             </View>
             
-            <View style={styles.chartContainer}>
-              <BarChart
-                data={performanceData}
-                width={screenWidth - 40}
-                height={200}
-                chartConfig={{
-                  backgroundColor: '#FFFFFF',
-                  backgroundGradientFrom: '#FFFFFF',
-                  backgroundGradientTo: '#FFFFFF',
-                  decimalPlaces: 1,
-                  color: (opacity = 1) => `rgba(27, 54, 93, ${opacity})`,
-                  labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                  style: {
-                    borderRadius: 16,
-                  },
-                }}
-                style={styles.chart}
-                showValuesOnTopOfBars
-                fromZero
-              />
+            <View style={styles.performanceContainer}>
+              <View style={styles.performanceGrid}>
+                {performanceData.map((item, index) => (
+                  <View key={index} style={styles.performanceItem}>
+                    <Text style={styles.performancePeriod}>{item.period}</Text>
+                    <Text style={styles.performanceValue}>+{item.value}%</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           </View>
 
@@ -431,19 +421,35 @@ const styles = StyleSheet.create({
   periodTextActive: {
     color: '#FFFFFF',
   },
-  chartContainer: {
+  performanceContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 10,
+    padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  chart: {
-    marginVertical: 8,
-    borderRadius: 16,
+  performanceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  performanceItem: {
+    alignItems: 'center',
+    width: '18%',
+    marginBottom: 10,
+  },
+  performancePeriod: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 5,
+  },
+  performanceValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#28A745',
   },
   statsGrid: {
     flexDirection: 'row',

@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { LineChart, PieChart } from 'react-native-chart-kit';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -32,25 +31,6 @@ const Dashboard = () => {
       { type: 'dividend', stock: 'VTI', amount: 125, time: '3 days ago' },
     ],
   };
-
-  const chartData = {
-    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-    datasets: [
-      {
-        data: [115000, 118000, 120000, 122000, 121000, 125430],
-        color: (opacity = 1) => `rgba(27, 54, 93, ${opacity})`,
-        strokeWidth: 3,
-      },
-    ],
-  };
-
-  const pieData = portfolioData.investments.map(investment => ({
-    name: investment.name,
-    population: investment.value,
-    color: investment.color,
-    legendFontColor: '#7F7F7F',
-    legendFontSize: 15,
-  }));
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
@@ -131,33 +111,27 @@ const Dashboard = () => {
             </TouchableOpacity>
           </View>
 
-          {/* Portfolio Performance Chart */}
+          {/* Portfolio Performance Summary */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Portfolio Performance</Text>
-            <View style={styles.chartContainer}>
-              <LineChart
-                data={chartData}
-                width={screenWidth - 40}
-                height={220}
-                chartConfig={{
-                  backgroundColor: '#FFFFFF',
-                  backgroundGradientFrom: '#FFFFFF',
-                  backgroundGradientTo: '#FFFFFF',
-                  decimalPlaces: 0,
-                  color: (opacity = 1) => `rgba(27, 54, 93, ${opacity})`,
-                  labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                  style: {
-                    borderRadius: 16,
-                  },
-                  propsForDots: {
-                    r: '6',
-                    strokeWidth: '2',
-                    stroke: '#FFD700',
-                  },
-                }}
-                bezier
-                style={styles.chart}
-              />
+            <View style={styles.performanceCard}>
+              <Text style={styles.performanceText}>
+                Your portfolio has grown 14.03% over the past year, outperforming the market average of 11.2%.
+              </Text>
+              <View style={styles.performanceStats}>
+                <View style={styles.statItem}>
+                  <Text style={styles.statLabel}>1 Month</Text>
+                  <Text style={styles.statValue}>+3.5%</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statLabel}>3 Months</Text>
+                  <Text style={styles.statValue}>+8.2%</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statLabel}>1 Year</Text>
+                  <Text style={styles.statValue}>+14.03%</Text>
+                </View>
+              </View>
             </View>
           </View>
 
@@ -165,19 +139,6 @@ const Dashboard = () => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Asset Allocation</Text>
             <View style={styles.allocationContainer}>
-              <PieChart
-                data={pieData}
-                width={screenWidth - 40}
-                height={180}
-                chartConfig={{
-                  color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                }}
-                accessor="population"
-                backgroundColor="transparent"
-                paddingLeft="15"
-                center={[10, 0]}
-                absolute
-              />
               <View style={styles.allocationList}>
                 {portfolioData.investments.map((investment, index) => (
                   <View key={index} style={styles.allocationItem}>
@@ -187,6 +148,19 @@ const Dashboard = () => {
                       <Text style={styles.allocationValue}>
                         {formatCurrency(investment.value)} ({investment.percentage}%)
                       </Text>
+                    </View>
+                    <View style={styles.allocationBarContainer}>
+                      <View style={styles.allocationBar}>
+                        <View 
+                          style={[
+                            styles.allocationBarFill, 
+                            { 
+                              width: `${investment.percentage}%`,
+                              backgroundColor: investment.color
+                            }
+                          ]} 
+                        />
+                      </View>
                     </View>
                   </View>
                 ))}
@@ -341,19 +315,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
-  chartContainer: {
+  performanceCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 10,
+    padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  chart: {
-    marginVertical: 8,
-    borderRadius: 16,
+  performanceText: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 20,
+    lineHeight: 24,
+  },
+  performanceStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 5,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#28A745',
   },
   allocationContainer: {
     backgroundColor: '#FFFFFF',
@@ -366,12 +359,12 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   allocationList: {
-    marginTop: 15,
+    marginTop: 5,
   },
   allocationItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 15,
   },
   colorDot: {
     width: 12,
@@ -391,6 +384,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginTop: 2,
+  },
+  allocationBarContainer: {
+    width: 60,
+    marginLeft: 10,
+  },
+  allocationBar: {
+    height: 6,
+    backgroundColor: '#F0F0F0',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  allocationBarFill: {
+    height: '100%',
+    borderRadius: 3,
   },
   transactionItem: {
     flexDirection: 'row',
