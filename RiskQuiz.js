@@ -107,7 +107,7 @@ export default function RiskQuiz() {
           <View style={styles.header}>
             <Ionicons name="trophy" size={60} color={riskProfile.color} />
             <Text style={styles.title}>Risk Assessment Complete!</Text>
-            <Text style={styles.subtitle}>Here's your risk profile</Text>
+            <Text style={styles.subtitle}>Here&apos;s your risk profile</Text>
           </View>
 
           <View style={[styles.riskCard, { borderColor: riskProfile.color }]}>
