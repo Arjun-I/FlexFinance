@@ -16,9 +16,6 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswor
 import { auth } from './firebase';
 import { Ionicons } from '@expo/vector-icons';
 
-// Debug Firebase configuration
-console.log('🔧 Firebase Auth Object:', auth);
-console.log('🔧 Firebase Auth Config:', auth.config);
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -112,7 +109,7 @@ export default function LoginScreen() {
           errorMessage = 'Firebase configuration error. Please check API key.';
           break;
         default:
-          errorMessage = `Error: ${error.message}`;
+           errorMessage = 'Something went wrong. Please try again.';
       }
       
       Alert.alert('Error', errorMessage);
@@ -163,7 +160,7 @@ export default function LoginScreen() {
           errorMessage = 'Too many reset attempts. Please try again later.';
           break;
         default:
-          errorMessage = error.message;
+          errorMessage = 'Something went wrong. Please try again.';
       }
       
       Alert.alert('Error', errorMessage);
@@ -205,10 +202,10 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.formContainer}>
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, errors.email && styles.inputContainerError]}>
               <Ionicons name="mail" size={20} color="#94a3b8" style={styles.inputIcon} />
               <TextInput
-                style={[styles.input, errors.email && styles.inputError]}
+                style={styles.input}
                 placeholder="Enter your email"
                 placeholderTextColor="#94a3b8"
                 value={email}
@@ -223,10 +220,10 @@ export default function LoginScreen() {
             </View>
             {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
 
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, errors.password && styles.inputContainerError]}>
               <Ionicons name="lock-closed" size={20} color="#94a3b8" style={styles.inputIcon} />
               <TextInput
-                style={[styles.input, errors.password && styles.inputError]}
+                style={styles.input}
                 placeholder="Enter your password"
                 placeholderTextColor="#94a3b8"
                 value={password}
@@ -382,7 +379,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
   },
-  inputError: {
+  inputContainerError: {
     borderColor: '#ef4444',
   },
   eyeIcon: {

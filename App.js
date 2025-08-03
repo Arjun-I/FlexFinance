@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
 import LoginScreen from './LoginScreen';
@@ -17,20 +17,19 @@ export default function App() {
   const [hasCompletedQuiz, setHasCompletedQuiz] = useState(false);
 
   useEffect(() => {
-    try {
-      const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => {
         setUser(user);
         setLoading(false);
-      }, (error) => {
+      },
+      (error) => {
         console.error('Auth state change error:', error);
         setLoading(false);
-      });
+      }
+    );
 
-      return unsubscribe;
-    } catch (error) {
-      console.error('Firebase auth error:', error);
-      setLoading(false);
-    }
+    return unsubscribe;
   }, []);
 
   if (loading) {
@@ -54,7 +53,11 @@ export default function App() {
         {!user ? (
           <Stack.Screen name="Login" component={LoginScreen} />
         ) : !hasCompletedQuiz ? (
-          <Stack.Screen name="RiskQuiz" component={RiskQuiz} />
+          <Stack.Screen name="RiskQuiz">
+            {(props) => (
+              <RiskQuiz {...props} setHasCompletedQuiz={setHasCompletedQuiz} />
+            )}
+          </Stack.Screen>
         ) : (
           <Stack.Screen name="Dashboard" component={Dashboard} />
         )}
