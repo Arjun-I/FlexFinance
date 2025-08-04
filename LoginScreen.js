@@ -13,9 +13,31 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
 import { auth } from './firebase';
+import { db } from './firebase';
 import { Ionicons } from '@expo/vector-icons';
 
+const createUserProfileIfMissing = async (uid, email) => {
+  const userRef = doc(db, 'users', uid);
+  await setDoc(
+    userRef,
+    {
+      email,
+      createdAt: new Date(),
+      likedStocks: [],
+      cashBalance: 10000,
+      riskProfile: {
+        volatility: 0,
+        liquidity: 0,
+        timeHorizon: 0,
+        ethics: 0,
+        knowledge: 0,
+      },
+    },
+    { merge: true }
+  );
+};
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -27,142 +49,60 @@ export default function LoginScreen() {
 
   const validateForm = () => {
     const newErrors = {};
-
-    // Email validation
-    if (!email) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = 'Please enter a valid email address';
-    }
-
-    // Password validation
-    if (!password) {
-      newErrors.password = 'Password is required';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-    }
-
+    if (!email) newErrors.email = 'Email is required';
+    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = 'Please enter a valid email address';
+    if (!password) newErrors.password = 'Password is required';
+    else if (password.length < 6) newErrors.password = 'Password must be at least 6 characters';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleAuth = async () => {
-    if (!validateForm()) {
-      return;
-    }
-
+    if (!validateForm()) return;
     setLoading(true);
-    console.log('🔐 Attempting authentication...');
-    console.log('📧 Email:', email);
-    console.log('🔑 Mode:', isLogin ? 'Login' : 'Signup');
-    console.log('🔧 Firebase Auth Object:', auth);
-    
     try {
       if (isLogin) {
-        console.log('🔑 Signing in with Firebase...');
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        console.log('✅ Sign in successful:', userCredential.user.email);
+        await signInWithEmailAndPassword(auth, email, password);
         Alert.alert('Success', 'Welcome back to FlexFinance!');
       } else {
-        console.log('📝 Creating new account with Firebase...');
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        console.log('✅ Account created successfully:', userCredential.user.email);
+        await createUserProfileIfMissing(userCredential.user.uid, email);
         Alert.alert('Success', 'Account created successfully! Welcome to FlexFinance!');
       }
     } catch (error) {
-      console.error('❌ Firebase Auth Error:', error);
-      console.error('❌ Error Code:', error.code);
-      console.error('❌ Error Message:', error.message);
-      console.error('❌ Full Error Object:', JSON.stringify(error, null, 2));
-      
       let errorMessage = 'An error occurred. Please try again.';
-      
       switch (error.code) {
-        case 'auth/user-not-found':
-          errorMessage = 'No account found with this email. Please sign up or check your email.';
-          break;
-        case 'auth/wrong-password':
-          errorMessage = 'Incorrect password. Please try again.';
-          break;
-        case 'auth/email-already-in-use':
-          errorMessage = 'An account with this email already exists. Please sign in instead.';
-          break;
-        case 'auth/weak-password':
-          errorMessage = 'Password is too weak. Please choose a stronger password.';
-          break;
-        case 'auth/invalid-email':
-          errorMessage = 'Please enter a valid email address.';
-          break;
-        case 'auth/too-many-requests':
-          errorMessage = 'Too many failed attempts. Please try again later.';
-          break;
-        case 'auth/network-request-failed':
-          errorMessage = 'Network error. Please check your internet connection.';
-          break;
-        case 'auth/app-not-authorized':
-          errorMessage = 'Firebase app not authorized. Please check configuration.';
-          break;
-        case 'auth/operation-not-allowed':
-          errorMessage = 'Email/password authentication is not enabled. Please contact support.';
-          break;
-        case 'auth/invalid-api-key':
-          errorMessage = 'Firebase configuration error. Please check API key.';
-          break;
-        default:
-           errorMessage = 'Something went wrong. Please try again.';
+        case 'auth/user-not-found': errorMessage = 'No account found with this email. Please sign up or check your email.'; break;
+        case 'auth/wrong-password': errorMessage = 'Incorrect password. Please try again.'; break;
+        case 'auth/email-already-in-use': errorMessage = 'An account with this email already exists. Please sign in instead.'; break;
+        case 'auth/weak-password': errorMessage = 'Password is too weak. Please choose a stronger password.'; break;
+        case 'auth/invalid-email': errorMessage = 'Please enter a valid email address.'; break;
+        case 'auth/too-many-requests': errorMessage = 'Too many failed attempts. Please try again later.'; break;
+        case 'auth/network-request-failed': errorMessage = 'Network error. Please check your internet connection.'; break;
+        case 'auth/app-not-authorized': errorMessage = 'Firebase app not authorized. Please check configuration.'; break;
+        case 'auth/operation-not-allowed': errorMessage = 'Email/password authentication is not enabled. Please contact support.'; break;
+        case 'auth/invalid-api-key': errorMessage = 'Firebase configuration error. Please check API key.'; break;
       }
-      
       Alert.alert('Error', errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  const clearErrors = () => {
-    setErrors({});
-  };
+  const clearErrors = () => setErrors({});
 
   const handleForgotPassword = async () => {
-    if (!email) {
-      Alert.alert('Error', 'Please enter your email address first.');
-      return;
-    }
-
-    if (!/\S+@\S+\.\S+/.test(email)) {
-      Alert.alert('Error', 'Please enter a valid email address.');
-      return;
-    }
-
+    if (!email) return Alert.alert('Error', 'Please enter your email address first.');
+    if (!/\S+@\S+\.\S+/.test(email)) return Alert.alert('Error', 'Please enter a valid email address.');
     setLoading(true);
     try {
       await sendPasswordResetEmail(auth, email);
-      Alert.alert(
-        'Password Reset Email Sent',
-        'Check your email for a password reset link. If you don\'t see it, check your spam folder.',
-        [
-          {
-            text: 'OK',
-            onPress: () => console.log('Password reset email sent')
-          }
-        ]
-      );
+      Alert.alert('Password Reset Email Sent', 'Check your inbox (or spam) for the reset link.');
     } catch (error) {
       let errorMessage = 'An error occurred. Please try again.';
-      
-      switch (error.code) {
-        case 'auth/user-not-found':
-          errorMessage = 'No account found with this email address.';
-          break;
-        case 'auth/invalid-email':
-          errorMessage = 'Please enter a valid email address.';
-          break;
-        case 'auth/too-many-requests':
-          errorMessage = 'Too many reset attempts. Please try again later.';
-          break;
-        default:
-          errorMessage = 'Something went wrong. Please try again.';
-      }
-      
+      if (error.code === 'auth/user-not-found') errorMessage = 'No account found with this email address.';
+      else if (error.code === 'auth/invalid-email') errorMessage = 'Please enter a valid email address.';
+      else if (error.code === 'auth/too-many-requests') errorMessage = 'Too many reset attempts. Please try again later.';
       Alert.alert('Error', errorMessage);
     } finally {
       setLoading(false);
@@ -170,34 +110,23 @@ export default function LoginScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={['#0f172a', '#1e293b', '#334155']}
-      style={styles.container}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
+    <LinearGradient colors={['#0f172a', '#1e293b', '#334155']} style={styles.container}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
         <ScrollView contentContainerStyle={styles.scrollContainer}>
           <View style={styles.header}>
             <View style={styles.logoContainer}>
               <Ionicons name="wallet" size={60} color="#6366f1" />
             </View>
             <Text style={styles.title}>FlexFinance</Text>
-            <Text style={styles.subtitle}>
-              Your personal finance companion
-            </Text>
+            <Text style={styles.subtitle}>Your personal finance companion</Text>
           </View>
 
           <View style={styles.instructionsContainer}>
-            <Text style={styles.instructionsTitle}>
-              {isLogin ? 'Welcome Back!' : 'Create Your Account'}
-            </Text>
+            <Text style={styles.instructionsTitle}>{isLogin ? 'Welcome Back!' : 'Create Your Account'}</Text>
             <Text style={styles.instructionsText}>
-              {isLogin 
+              {isLogin
                 ? 'Sign in to access your financial dashboard and track your investments.'
-                : 'Create a new account to start managing your finances with FlexFinance.'
-              }
+                : 'Create a new account to start managing your finances with FlexFinance.'}
             </Text>
           </View>
 
@@ -235,15 +164,8 @@ export default function LoginScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeIcon}
-              >
-                <Ionicons
-                  name={showPassword ? 'eye-off' : 'eye'}
-                  size={20}
-                  color="#94a3b8"
-                />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color="#94a3b8" />
               </TouchableOpacity>
             </View>
             {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
@@ -253,21 +175,11 @@ export default function LoginScreen() {
               onPress={handleAuth}
               disabled={loading}
             >
-              {loading ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Text style={styles.buttonText}>
-                  {isLogin ? 'Sign In' : 'Create Account'}
-                </Text>
-              )}
+              {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.buttonText}>{isLogin ? 'Sign In' : 'Create Account'}</Text>}
             </TouchableOpacity>
 
             {isLogin && (
-              <TouchableOpacity
-                style={styles.forgotPasswordButton}
-                onPress={handleForgotPassword}
-                disabled={loading}
-              >
+              <TouchableOpacity style={styles.forgotPasswordButton} onPress={handleForgotPassword} disabled={loading}>
                 <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
               </TouchableOpacity>
             )}
@@ -282,9 +194,7 @@ export default function LoginScreen() {
               }}
             >
               <Text style={styles.switchText}>
-                {isLogin
-                  ? "Don't have an account? Sign Up"
-                  : 'Already have an account? Sign In'}
+                {isLogin ? "Don't have an account? Sign Up" : 'Already have an account? Sign In'}
               </Text>
             </TouchableOpacity>
 
@@ -305,21 +215,10 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
+  container: { flex: 1 },
+  keyboardView: { flex: 1 },
+  scrollContainer: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24 },
+  header: { alignItems: 'center', marginBottom: 32 },
   logoContainer: {
     width: 120,
     height: 120,
@@ -329,37 +228,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#94a3b8',
-    textAlign: 'center',
-  },
-  instructionsContainer: {
-    marginBottom: 32,
-    paddingHorizontal: 8,
-  },
-  instructionsTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  instructionsText: {
-    fontSize: 14,
-    color: '#94a3b8',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  formContainer: {
-    width: '100%',
-  },
+  title: { fontSize: 32, fontWeight: 'bold', color: '#ffffff', marginBottom: 8 },
+  subtitle: { fontSize: 16, color: '#94a3b8', textAlign: 'center' },
+  instructionsContainer: { marginBottom: 32, paddingHorizontal: 8 },
+  instructionsTitle: { fontSize: 20, fontWeight: 'bold', color: '#ffffff', textAlign: 'center', marginBottom: 8 },
+  instructionsText: { fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20 },
+  formContainer: { width: '100%' },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -370,27 +244,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  inputIcon: {
-    marginRight: 12,
-  },
-  input: {
-    flex: 1,
-    height: 56,
-    color: '#ffffff',
-    fontSize: 16,
-  },
-  inputContainerError: {
-    borderColor: '#ef4444',
-  },
-  eyeIcon: {
-    padding: 8,
-  },
-  errorText: {
-    color: '#ef4444',
-    fontSize: 12,
-    marginBottom: 16,
-    marginLeft: 4,
-  },
+  inputIcon: { marginRight: 12 },
+  input: { flex: 1, height: 56, color: '#ffffff', fontSize: 16 },
+  inputContainerError: { borderColor: '#ef4444' },
+  eyeIcon: { padding: 8 },
+  errorText: { color: '#ef4444', fontSize: 12, marginBottom: 16, marginLeft: 4 },
   button: {
     backgroundColor: '#6366f1',
     height: 56,
@@ -399,40 +257,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
     shadowColor: '#6366f1',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
   },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  switchButton: {
-    marginTop: 24,
-    alignItems: 'center',
-  },
-  switchText: {
-    color: '#6366f1',
-    fontSize: 16,
-    textDecorationLine: 'underline',
-  },
-  forgotPasswordButton: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  forgotPasswordText: {
-    color: '#94a3b8',
-    fontSize: 14,
-    textDecorationLine: 'underline',
-  },
+  buttonDisabled: { opacity: 0.7 },
+  buttonText: { color: '#ffffff', fontSize: 18, fontWeight: '600' },
+  switchButton: { marginTop: 24, alignItems: 'center' },
+  switchText: { color: '#6366f1', fontSize: 16, textDecorationLine: 'underline' },
+  forgotPasswordButton: { marginTop: 16, alignItems: 'center' },
+  forgotPasswordText: { color: '#94a3b8', fontSize: 14, textDecorationLine: 'underline' },
   helpContainer: {
     marginTop: 32,
     padding: 16,
@@ -441,15 +276,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  helpTitle: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  helpText: {
-    color: '#94a3b8',
-    fontSize: 12,
-    lineHeight: 18,
-  },
+  helpTitle: { color: '#ffffff', fontSize: 16, fontWeight: '600', marginBottom: 8 },
+  helpText: { color: '#94a3b8', fontSize: 12, lineHeight: 18 },
 });

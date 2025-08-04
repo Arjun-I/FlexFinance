@@ -8,80 +8,81 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { auth } from './firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from './firebase';
 
 const questions = [
   {
     id: 1,
-    question: "How would you react if your investment lost 20% of its value in a month?",
+    category: 'volatilityTolerance',
+    question: 'How would you react if your investment lost 20% of its value in a month?',
     options: [
-      { text: "Sell immediately", score: 1 },
-      { text: "Wait and see", score: 2 },
-      { text: "Buy more if fundamentals are good", score: 3 },
-      { text: "Consider it a buying opportunity", score: 4 },
-    ]
+      { text: 'Sell immediately', score: 1 },
+      { text: 'Wait and see', score: 2 },
+      { text: 'Buy more if fundamentals are good', score: 3 },
+      { text: 'Consider it a buying opportunity', score: 4 },
+    ],
   },
   {
     id: 2,
-    question: "What's your primary investment goal?",
+    category: 'liquidityNeed',
+    question: 'How soon might you need to withdraw your investments?',
     options: [
-      { text: "Preserve capital", score: 1 },
-      { text: "Steady income", score: 2 },
-      { text: "Growth over time", score: 3 },
-      { text: "Maximum returns", score: 4 },
-    ]
+      { text: 'Within 6 months', score: 1 },
+      { text: '1-3 years', score: 2 },
+      { text: '3-5 years', score: 3 },
+      { text: 'Not for 5+ years', score: 4 },
+    ],
   },
   {
     id: 3,
-    question: "How long do you plan to invest?",
+    category: 'timeHorizon',
+    question: 'How long do you plan to invest?',
     options: [
-      { text: "Less than 1 year", score: 1 },
-      { text: "1-3 years", score: 2 },
-      { text: "3-10 years", score: 3 },
-      { text: "More than 10 years", score: 4 },
-    ]
+      { text: 'Less than 1 year', score: 1 },
+      { text: '1-3 years', score: 2 },
+      { text: '3-10 years', score: 3 },
+      { text: 'More than 10 years', score: 4 },
+    ],
   },
   {
     id: 4,
-    question: "What percentage of your income do you save?",
+    category: 'investorKnowledge',
+    question: 'How familiar are you with investing concepts?',
     options: [
-      { text: "Less than 5%", score: 1 },
-      { text: "5-10%", score: 2 },
-      { text: "10-20%", score: 3 },
-      { text: "More than 20%", score: 4 },
-    ]
+      { text: 'Not at all', score: 1 },
+      { text: 'Basic', score: 2 },
+      { text: 'Moderate', score: 3 },
+      { text: 'Very experienced', score: 4 },
+    ],
   },
   {
     id: 5,
-    question: "How do you feel about market volatility?",
+    category: 'ethicsPreference',
+    question: 'Do you want to avoid certain industries?',
     options: [
-      { text: "Very uncomfortable", score: 1 },
-      { text: "Somewhat uncomfortable", score: 2 },
-      { text: "Neutral", score: 3 },
-      { text: "Comfortable with volatility", score: 4 },
-    ]
-  }
+      { text: 'Yes, avoid fossil fuels', score: 'green energy' },
+      { text: 'Yes, avoid tobacco/alcohol', score: 'no tobacco' },
+      { text: 'No strong preference', score: 'neutral' },
+      { text: 'I prefer high returns over ethics', score: 'maximize returns' },
+    ],
+  },
 ];
-
 
 export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState({});
   const [showResults, setShowResults] = useState(false);
 
-  const totalScore = useMemo(() => Object.values(answers).reduce((a, b) => a + b, 0), [answers]);
-  const maxScore = questions.length * 4;
-  const percentage = Math.round((totalScore / maxScore) * 100);
-
   const riskProfile = useMemo(() => {
     if (!showResults) return null;
-    if (percentage <= 25) return { level: 'Conservative', color: '#10b981', description: 'You prefer low-risk investments with steady returns.' };
-    if (percentage <= 50) return { level: 'Moderate', color: '#f59e0b', description: 'You balance risk and return with a moderate approach.' };
-    if (percentage <= 75) return { level: 'Aggressive', color: '#ef4444', description: 'You seek higher returns and accept more risk.' };
-    return { level: 'Very Aggressive', color: '#dc2626', description: 'You pursue maximum returns and are comfortable with high risk.' };
-  }, [showResults, percentage]);
+    return answers;
+  }, [showResults, answers]);
 
   const handleAnswer = (score) => {
-    setAnswers(prev => ({ ...prev, [currentQuestion]: score }));
+    const category = questions[currentQuestion].category;
+    setAnswers((prev) => ({ ...prev, [category]: score }));
     if (currentQuestion < questions.length - 1) {
       setCurrentQuestion(currentQuestion + 1);
     } else {
@@ -89,13 +90,25 @@ export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
     }
   };
 
-  const handleFinish = () => {
-    if (typeof setHasCompletedQuiz === 'function') {
-      setHasCompletedQuiz(true);
+  const handleFinish = async () => {
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        await setDoc(
+          doc(db, 'users', user.uid),
+          { riskProfile: answers },
+          { merge: true }
+        );
+        if (typeof setHasCompletedQuiz === 'function') {
+          setHasCompletedQuiz(true);
+        }
+        navigation.navigate('Dashboard');
+      } catch (err) {
+        console.error('Error saving risk profile to Firestore:', err);
+      }
     }
-    navigation.navigate('Dashboard');
   };
-
+  
   if (showResults) {
     return (
       <LinearGradient colors={['#0f172a', '#1e293b', '#334155']} style={styles.container}>
@@ -187,3 +200,126 @@ const ResultCard = ({ profile, totalScore, percentage }) => (
 );
 
 
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    paddingTop: 50,
+    paddingHorizontal: 20,
+  },
+  scrollContainer: {
+    paddingBottom: 40,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 24,
+    color: '#e2e8f0',
+    fontWeight: 'bold',
+    marginTop: 12,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#cbd5e1',
+    marginTop: 4,
+  },
+  questionContainer: {
+    marginBottom: 24,
+  },
+  questionNumber: {
+    fontSize: 16,
+    color: '#94a3b8',
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  questionText: {
+    fontSize: 20,
+    color: '#f1f5f9',
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  optionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1e293b',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#475569',
+  },
+  optionText: {
+    color: '#e2e8f0',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  progressContainer: {
+    marginBottom: 20,
+    width: '100%',
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: '#475569',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: 8,
+    backgroundColor: '#6366f1',
+  },
+  progressText: {
+    marginTop: 6,
+    fontSize: 14,
+    color: '#cbd5e1',
+    textAlign: 'right',
+  },
+  button: {
+    marginTop: 30,
+    backgroundColor: '#6366f1',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  riskCard: {
+    borderWidth: 2,
+    borderRadius: 12,
+    padding: 20,
+    marginVertical: 24,
+    backgroundColor: '#1e293b',
+  },
+  riskLevel: {
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  riskDescription: {
+    fontSize: 16,
+    color: '#cbd5e1',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 24,
+  },
+  statCard: {
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#f8fafc',
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#94a3b8',
+    marginTop: 4,
+  },
+});

@@ -4,12 +4,18 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './firebase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import { app, auth } from './firebase';
+import { getFirestore } from 'firebase/firestore';
+
 import LoginScreen from './LoginScreen';
 import RiskQuiz from './RiskQuiz';
 import Dashboard from './Dashboard';
 
 const Stack = createNativeStackNavigator();
+
+export const db = getFirestore(app);
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -19,12 +25,25 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(
       auth,
-      (user) => {
+      async (user) => {
         setUser(user);
-        setLoading(false);
+        if (user) {
+          try {
+            const value = await AsyncStorage.getItem(`riskQuizCompleted_${user.uid}`);
+            setHasCompletedQuiz(value === 'true');
+          } catch (err) {
+            console.error('Error loading quiz completion state:', err);
+            setHasCompletedQuiz(false);
+          }
+          setLoading(false);
+        } else {
+          setHasCompletedQuiz(false);
+          setLoading(false);
+        }
       },
       (error) => {
         console.error('Auth state change error:', error);
+        setHasCompletedQuiz(false);
         setLoading(false);
       }
     );
