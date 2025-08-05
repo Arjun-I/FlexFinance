@@ -5,39 +5,30 @@ import PaperTrading from './PaperTrading';
 
 export default function InvestmentsScreen() {
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Swipe to Discover</Text>
-        <SwipeStocks />
-      </View>
-
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 120 }}>
+      <Text style={styles.title}>Swipe to Discover</Text>
+      <SwipeStocks />
       <View style={styles.divider} />
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Your Paper Portfolio</Text>
-        <PaperTrading />
-      </View>
+      <Text style={styles.title}>Your Paper Portfolio</Text>
+      <PaperTrading />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    backgroundColor: '#0f172a',
     padding: 16,
-    paddingBottom: 100,
   },
-  section: {
-    marginBottom: 32,
-  },
-  sectionTitle: {
+  title: {
+    color: '#fff',
     fontSize: 18,
     fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 12,
+    marginVertical: 16,
   },
   divider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    marginVertical: 24,
+    backgroundColor: '#334155',
+    marginVertical: 20,
   },
 });

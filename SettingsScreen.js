@@ -1,11 +1,45 @@
-import React from 'react';
-import { Text, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { Text, StyleSheet, View, Switch, TouchableOpacity, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { signOut } from 'firebase/auth';
+import { auth } from './firebase';
 
 export default function SettingsScreen() {
+  const [darkMode, setDarkMode] = useState(true); // placeholder toggle
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      Alert.alert('Signed out', 'You have been signed out.');
+      // Navigate to login screen if needed
+    } catch (error) {
+      Alert.alert('Error', 'Could not sign out.');
+    }
+  };
+
+  const user = auth.currentUser;
+
   return (
     <LinearGradient colors={['#0f172a', '#1e293b', '#334155']} style={styles.container}>
-      <Text style={styles.title}>Settings</Text>
+      <View style={styles.section}>
+        <Ionicons name="person-circle-outline" size={48} color="#94a3b8" />
+        <Text style={styles.email}>{user?.email || 'Guest'}</Text>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.label}>Dark Mode</Text>
+        <Switch
+          value={darkMode}
+          onValueChange={(value) => setDarkMode(value)}
+          thumbColor={darkMode ? '#6366f1' : '#ccc'}
+        />
+      </View>
+
+      <TouchableOpacity style={styles.button} onPress={handleLogout}>
+        <Ionicons name="log-out-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+        <Text style={styles.buttonText}>Sign Out</Text>
+      </TouchableOpacity>
     </LinearGradient>
   );
 }
@@ -13,12 +47,36 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
+    paddingTop: 100,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  section: {
+    marginBottom: 32,
     alignItems: 'center',
   },
-  title: {
-    color: '#ffffff',
-    fontSize: 24,
-    fontWeight: 'bold',
+  email: {
+    color: '#fff',
+    fontSize: 16,
+    marginTop: 8,
+  },
+  label: {
+    color: '#cbd5e1',
+    fontSize: 18,
+    marginBottom: 8,
+  },
+  button: {
+    flexDirection: 'row',
+    backgroundColor: '#ef4444',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

@@ -38,7 +38,8 @@ const createUserProfileIfMissing = async (uid, email) => {
   );
 };
 
-export default function LoginScreen() {
+export default function LoginScreen({ navigation }) {
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLogin, setIsLogin] = useState(true);
@@ -56,24 +57,27 @@ export default function LoginScreen() {
     return Object.keys(newErrors).length === 0;
   };
 
+  
   const handleAuth = async () => {
-    if (!validateForm()) return;
-    setLoading(true);
-    try {
-      if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
-        Alert.alert('Success', 'Welcome back to FlexFinance!');
-      } else {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await createUserProfileIfMissing(userCredential.user.uid, email);
-        Alert.alert('Success', 'Account created successfully! Welcome to FlexFinance!');
-      }
-    } catch (error) {
-      let errorMessage = 'An error occurred. Please try again.';
-      switch (error.code) {
-        case 'auth/user-not-found': errorMessage = 'No account found with this email. Please sign up or check your email.'; break;
-        case 'auth/wrong-password': errorMessage = 'Incorrect password. Please try again.'; break;
-        case 'auth/email-already-in-use': errorMessage = 'An account with this email already exists. Please sign in instead.'; break;
+  if (!validateForm()) return;
+  setLoading(true);
+  try {
+    if (isLogin) {
+      await signInWithEmailAndPassword(auth, email, password);
+      Alert.alert('Success', 'Welcome back to FlexFinance!');
+      navigation.replace('Dashboard'); // ← ADD THIS
+    } else {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await createUserProfileIfMissing(userCredential.user.uid, email);
+      Alert.alert('Success', 'Account created successfully! Welcome to FlexFinance!');
+      navigation.replace('Dashboard'); // ← ADD THIS
+    }
+  } catch (error) {
+    let errorMessage = 'An error occurred. Please try again.';
+    switch (error.code) {
+      case 'auth/user-not-found': errorMessage = 'No account found with this email. Please sign up or check your email.'; break;
+      case 'auth/wrong-password': errorMessage = 'Incorrect password. Please try again.'; break;
+      case 'auth/email-already-in-use': errorMessage = 'An account with this email already exists. Please sign in instead.'; break;
         case 'auth/weak-password': errorMessage = 'Password is too weak. Please choose a stronger password.'; break;
         case 'auth/invalid-email': errorMessage = 'Please enter a valid email address.'; break;
         case 'auth/too-many-requests': errorMessage = 'Too many failed attempts. Please try again later.'; break;

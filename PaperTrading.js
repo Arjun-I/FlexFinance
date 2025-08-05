@@ -1,10 +1,29 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, TextInput, Button, FlatList, StyleSheet, Alert, Dimensions } from 'react-native';
+import {
+  ScrollView,
+  View,
+  Text,
+  TextInput,
+  Button,
+  FlatList,
+  StyleSheet,
+  Alert,
+  Dimensions
+} from 'react-native';
+
 import { PieChart, LineChart } from 'react-native-chart-kit';
-import { collection, doc, getDoc, getDocs, deleteDoc, updateDoc, addDoc, setDoc } from 'firebase/firestore';
+import {
+  collection, doc, getDoc, getDocs, deleteDoc,
+  updateDoc, addDoc, setDoc
+} from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 const screenWidth = Dimensions.get('window').width;
+
+// ✅ Whitelisted tickers and mock prices
+const MOCK_TICKERS = {
+  AAPL: 190, TSLA: 270, MSFT: 310, NVDA: 500, AMZN: 140
+};
 
 export default function PaperTrading() {
   const [portfolio, setPortfolio] = useState([]);
@@ -14,34 +33,31 @@ export default function PaperTrading() {
   const [industryData, setIndustryData] = useState([]);
   const [valueHistory, setValueHistory] = useState([]);
 
-  
-
- const fetchPortfolio = useCallback(async () => {
+  const fetchPortfolio = useCallback(async () => {
     const user = auth.currentUser;
     if (!user) return;
 
     try {
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      if (userDoc.exists()) {
-        setCash(userDoc.data().cashBalance || 100000);
-      } else {
-        setCash(100000);
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+
+      let currentCash = 100000;
+      if (userSnap.exists()) {
+        currentCash = userSnap.data().cashBalance || 100000;
       }
 
+      setCash(currentCash);
 
       const portfolioSnap = await getDocs(collection(db, 'users', user.uid, 'portfolio'));
       const data = portfolioSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setPortfolio(data);
       buildIndustryData(data);
-      buildValueHistory(data);
+      await buildValueHistory(data, user.uid, currentCash);
     } catch (err) {
-        if (err.code === 'permission-denied') {
-        Alert.alert('Permission denied', 'Please log in to access your portfolio.');
-      } else {
-        console.error('Failed to fetch portfolio:', err);
-      }
+      Alert.alert('Error', 'Failed to fetch portfolio data.');
+      console.error(err);
     }
-   }, []);
+  }, []);
 
   useEffect(() => {
     fetchPortfolio();
@@ -50,7 +66,8 @@ export default function PaperTrading() {
   const buildIndustryData = (data) => {
     const industryMap = {};
     let total = 0;
-    data.forEach((stock) => {
+
+    data.forEach(stock => {
       const value = (stock.shares || 0) * (stock.buyPrice || 0);
       const industry = stock.industry || 'Other';
       industryMap[industry] = (industryMap[industry] || 0) + value;
@@ -65,52 +82,80 @@ export default function PaperTrading() {
       legendFontColor: '#fff',
       legendFontSize: 12,
     }));
+
     setIndustryData(chartData);
   };
 
-  const buildValueHistory = (data) => {
-    const history = data.map(stock => (stock.shares || 0) * (stock.buyPrice || 0));
-    setValueHistory(history);
+  const buildValueHistory = async (data, userId, cashBalance) => {
+    try {
+      const totalValue = cashBalance + data.reduce((sum, stock) =>
+        sum + (stock.shares || 0) * (stock.buyPrice || 0), 0
+      );
+
+      await addDoc(collection(db, 'users', userId, 'valueHistory'), {
+        timestamp: new Date().toISOString(),
+        totalValue,
+      });
+
+      const historySnap = await getDocs(collection(db, 'users', userId, 'valueHistory'));
+      const sortedHistory = historySnap.docs
+        .map(doc => doc.data())
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+      setValueHistory(sortedHistory);
+    } catch (err) {
+      console.error('Error building value history:', err);
+    }
   };
 
   const fetchMockPrice = async (ticker) => {
-    const mockPrices = { AAPL: 180, TSLA: 270, MSFT: 310 };
-    return mockPrices[ticker.toUpperCase()] || 100;
+    return MOCK_TICKERS[ticker.toUpperCase()] || null;
   };
 
   const buyStock = async () => {
     const user = auth.currentUser;
-    if (!user || !ticker || !shares) return;
+    const trimmedTicker = ticker.trim().toUpperCase();
 
-    const price = await fetchMockPrice(ticker);
-    const cost = price * parseInt(shares, 10);
-    if (cost > cash) return Alert.alert('Error', 'Not enough cash');
+    if (!user || !trimmedTicker || !shares) {
+      Alert.alert('Error', 'Please fill out all fields.');
+      return;
+    }
+
+    const price = await fetchMockPrice(trimmedTicker);
+    if (!price) {
+      Alert.alert('Error', 'Invalid ticker. Try: AAPL, TSLA, MSFT, NVDA, AMZN');
+      return;
+    }
+
+    const sharesInt = parseInt(shares, 10);
+    if (!Number.isInteger(sharesInt) || sharesInt <= 0) {
+      Alert.alert('Error', 'Please enter a valid number of shares');
+      return;
+    }
+
+    const cost = price * sharesInt;
+    if (cost > cash) {
+      Alert.alert('Error', 'Not enough cash to buy shares');
+      return;
+    }
 
     try {
+      const userDocRef = doc(db, 'users', user.uid);
       await addDoc(collection(db, 'users', user.uid, 'portfolio'), {
-        ticker: ticker.toUpperCase(),
-        shares: parseInt(shares, 10),
+        ticker: trimmedTicker,
+        shares: sharesInt,
         buyPrice: price,
         timestamp: new Date(),
-        industry: 'Technology', // Default placeholder
-      });
-      const userDocRef = doc(db, 'users', user.uid);
-      await setDoc(userDocRef, {}, { merge: true });
-      await updateDoc(userDocRef, {
-        cashBalance: cash - cost,
+        industry: 'Technology',
       });
 
+      await updateDoc(userDocRef, { cashBalance: cash - cost });
       setTicker('');
       setShares('');
       fetchPortfolio();
     } catch (err) {
-      if (err.code === 'permission-denied') {
-        Alert.alert('Permission denied', 'Please log in to access your portfolio.');
-      } else if (err.code === 'not-found') {
-        Alert.alert('User not found', 'Please sign in to manage your portfolio.');
-      }else {
-        console.error('Error buying stock:', err);
-      }
+      Alert.alert('Error', 'Error buying stock.');
+      console.error(err);
     }
   };
 
@@ -118,31 +163,21 @@ export default function PaperTrading() {
     const user = auth.currentUser;
     if (!user || !stock?.id) return;
 
-    const currentVal = (stock.shares || 0) * (stock.buyPrice || 0);
+    const value = stock.shares * (stock.buyPrice || 0);
 
     try {
       const userDocRef = doc(db, 'users', user.uid);
-      await setDoc(userDocRef, {}, { merge: true });
-      await updateDoc(userDocRef, {
-        cashBalance: cash + currentVal,
-      });
-
       await deleteDoc(doc(db, 'users', user.uid, 'portfolio', stock.id));
+      await updateDoc(userDocRef, { cashBalance: cash + value });
 
       fetchPortfolio();
     } catch (err) {
-      if (err.code === 'permission-denied') {
-        Alert.alert('Permission denied', 'Please log in to access your portfolio.');
-      }else if (err.code === 'not-found') {
-        Alert.alert('User not found', 'Please sign in to manage your portfolio.');
-       } else {
-        console.error('Error selling stock:', err);
-      }
+      console.error('Error selling stock:', err);
     }
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <Text style={styles.header}>Cash: ${cash.toFixed(2)}</Text>
 
       <FlatList
@@ -158,46 +193,63 @@ export default function PaperTrading() {
         )}
       />
 
-      <TextInput placeholder="Ticker" value={ticker} onChangeText={setTicker} style={styles.input} />
-      <TextInput placeholder="Shares" value={shares} onChangeText={setShares} keyboardType="numeric" style={styles.input} />
+      <TextInput
+        placeholder="Ticker (e.g. AAPL)"
+        value={ticker}
+        onChangeText={setTicker}
+        style={styles.input}
+      />
+      <TextInput
+        placeholder="Shares"
+        value={shares}
+        onChangeText={setShares}
+        keyboardType="numeric"
+        style={styles.input}
+      />
       <Button title="Buy" onPress={buyStock} />
 
       <Text style={styles.chartHeader}>Industry Allocation</Text>
       {industryData.length > 0 && (
         <PieChart
           data={industryData}
-          width={screenWidth - 20}
+          width={screenWidth - 32}
           height={220}
           chartConfig={chartConfig}
-          accessor={'population'}
-          backgroundColor={'transparent'}
-          paddingLeft={'10'}
+          accessor="population"
+          backgroundColor="transparent"
+          paddingLeft="16"
           absolute
         />
       )}
 
       <Text style={styles.chartHeader}>Portfolio Value Over Time</Text>
       {valueHistory.length > 0 && (
-        <LineChart
-          data={{
-            labels: valueHistory.map((_, i) => `#${i + 1}`),
-            datasets: [{ data: valueHistory }],
-          }}
-          width={screenWidth - 20}
-          height={220}
-          chartConfig={chartConfig}
-          bezier
-        />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <LineChart
+            data={{
+              labels: valueHistory.map(entry =>
+                new Date(entry.timestamp).toLocaleDateString()
+              ),
+              datasets: [{ data: valueHistory.map(entry => entry.totalValue) }],
+            }}
+            width={Math.max(screenWidth, valueHistory.length * 60)}
+            height={220}
+            chartConfig={chartConfig}
+            bezier
+            style={{ borderRadius: 16, marginVertical: 8 }}
+          />
+        </ScrollView>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
 const chartConfig = {
   backgroundGradientFrom: '#1e293b',
   backgroundGradientTo: '#1e293b',
-  color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-  labelColor: () => '#fff',
+  decimalPlaces: 2,
+  color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`,
+  labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
   propsForDots: {
     r: '4',
     strokeWidth: '2',
@@ -206,16 +258,27 @@ const chartConfig = {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#0f172a' },
-  header: { fontSize: 18, fontWeight: 'bold', marginBottom: 12, color: 'white' },
+  container: { padding: 16, backgroundColor: '#0f172a' },
+  header: { fontSize: 18, fontWeight: 'bold', color: 'white', marginBottom: 12 },
   holding: {
-    marginVertical: 4,
-    backgroundColor: '#1e293b',
-    padding: 8,
-    borderRadius: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    padding: 8,
+    marginVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#1e293b',
   },
-  input: { backgroundColor: '#fff', padding: 8, marginVertical: 6, borderRadius: 4 },
-  chartHeader: { color: 'white', marginTop: 20, marginBottom: 8, fontSize: 16, fontWeight: 'bold' },
+  input: {
+    backgroundColor: '#fff',
+    padding: 10,
+    marginVertical: 8,
+    borderRadius: 6,
+  },
+  chartHeader: {
+    color: 'white',
+    marginTop: 20,
+    marginBottom: 10,
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });

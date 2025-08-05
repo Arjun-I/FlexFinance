@@ -39,76 +39,60 @@ const dummyStocks = [
   },
 ];
 
-// Add liked stock to user's Firestore document
 const addLikedStock = async (stock) => {
-  try {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
-    const userDocRef = doc(db, 'users', uid);
-    await setDoc(userDocRef, {}, { merge: true });
-    await updateDoc(userDocRef, {
-      likedStocks: arrayUnion(stock),
-    });
-  } catch (error) {
-    if (error.code === 'permission-denied') {
-      Alert.alert('Permission denied', 'Please log in to like stocks.');
-    } else {
-      console.error('Error adding liked stock:', error);
-    }
-  }
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  const ref = doc(db, 'users', uid);
+  await setDoc(ref, {}, { merge: true });
+  await updateDoc(ref, {
+    likedStocks: arrayUnion(stock),
+  });
 };
 
-// Store rejected stock in a subcollection (for learning purposes)
-const storeRejectedStock = async (stock) => {
-  try {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
-    const rejectedDocRef = doc(db, 'users', uid, 'rejected', stock.symbol);
-    await setDoc(rejectedDocRef, {
-      symbol: stock.symbol,
-      name: stock.name,
-      logo: stock.logo,
-      rejectedAt: new Date(),
-    });
-  } catch (error) {
-    console.error('Error storing rejected stock:', error);
-  }
+const rejectStock = async (stock) => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  const ref = doc(db, 'users', uid, 'rejected', stock.symbol);
+  await setDoc(ref, {
+    ...stock,
+    rejectedAt: new Date(),
+  });
 };
 
 export default function SwipeStocks() {
   const [index, setIndex] = useState(0);
   const position = useRef(new Animated.ValueXY()).current;
+  const [animating, setAnimating] = useState(false);
+
+  const handleSwipe = async (dir) => {
+    if (animating || index >= dummyStocks.length) return;
+    setAnimating(true);
+    const stock = dummyStocks[index];
+
+    if (dir === 'right') await addLikedStock(stock);
+    else await rejectStock(stock);
+
+    Animated.timing(position, {
+      toValue: { x: dir === 'right' ? 500 : -500, y: 0 },
+      duration: 250,
+      useNativeDriver: false,
+    }).start(() => {
+      position.setValue({ x: 0, y: 0 });
+      setIndex((prev) => prev + 1);
+      setAnimating(false);
+    });
+  };
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderMove: (_, gesture) => {
-        position.setValue({ x: gesture.dx, y: gesture.dy });
+        if (!animating) position.setValue({ x: gesture.dx, y: gesture.dy });
       },
       onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx > 120) {
-          // Swiped right: like
-          Animated.timing(position, {
-            toValue: { x: 500, y: gesture.dy },
-            duration: 300,
-            useNativeDriver: false,
-          }).start(() => {
-            addLikedStock(dummyStocks[index]);
-            setIndex((prev) => prev + 1);
-            position.setValue({ x: 0, y: 0 });
-          });
-        } else if (gesture.dx < -120) {
-          // Swiped left: reject
-          Animated.timing(position, {
-            toValue: { x: -500, y: gesture.dy },
-            duration: 300,
-            useNativeDriver: false,
-          }).start(() => {
-            storeRejectedStock(dummyStocks[index]);
-            setIndex((prev) => prev + 1);
-            position.setValue({ x: 0, y: 0 });
-          });
-        } else {
+        if (gesture.dx > 120) handleSwipe('right');
+        else if (gesture.dx < -120) handleSwipe('left');
+        else {
           Animated.spring(position, {
             toValue: { x: 0, y: 0 },
             useNativeDriver: false,
@@ -118,32 +102,28 @@ export default function SwipeStocks() {
     })
   ).current;
 
-  const renderCard = (stock) => (
-    <Animated.View
-      {...panResponder.panHandlers}
-      style={[styles.card, { transform: position.getTranslateTransform() }]}
-    >
-      <Image source={{ uri: stock.logo }} style={styles.logo} />
-      <Text style={styles.symbol}>{stock.symbol}</Text>
-      <Text style={styles.name}>{stock.name}</Text>
-      <Text style={styles.price}>{stock.price}</Text>
-      <Text
-        style={[
-          styles.change,
-          { color: stock.change.startsWith('+') ? '#10b981' : '#ef4444' },
-        ]}
-      >
-        {stock.change}
-      </Text>
-    </Animated.View>
-  );
-
   return (
     <View style={styles.container}>
       {index < dummyStocks.length ? (
-        renderCard(dummyStocks[index])
+        <Animated.View
+          {...panResponder.panHandlers}
+          style={[styles.card, { transform: position.getTranslateTransform() }]}
+        >
+          <Image source={{ uri: dummyStocks[index].logo }} style={styles.logo} />
+          <Text style={styles.symbol}>{dummyStocks[index].symbol}</Text>
+          <Text style={styles.name}>{dummyStocks[index].name}</Text>
+          <Text style={styles.price}>{dummyStocks[index].price}</Text>
+          <Text
+            style={[
+              styles.change,
+              { color: dummyStocks[index].change.startsWith('+') ? '#10b981' : '#ef4444' },
+            ]}
+          >
+            {dummyStocks[index].change}
+          </Text>
+        </Animated.View>
       ) : (
-        <Text style={{ color: 'white' }}>No more stocks!</Text>
+        <Text style={styles.endText}>No more stocks to show</Text>
       )}
       <View style={styles.swipeInfo}>
         <Ionicons name="information-circle" size={18} color="#94a3b8" />
@@ -154,12 +134,7 @@ export default function SwipeStocks() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingTop: 40,
-    alignItems: 'center',
-    paddingBottom: 60,
-  },
+  container: { alignItems: 'center', paddingBottom: 20 },
   card: {
     width: width - 60,
     height: 360,
@@ -167,47 +142,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
     padding: 24,
     alignItems: 'center',
-    borderWidth: 1,
     borderColor: '#334155',
+    borderWidth: 1,
     shadowColor: '#000',
     shadowOpacity: 0.2,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
   },
-  logo: {
-    width: 64,
-    height: 64,
-    marginBottom: 16,
-  },
-  symbol: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  name: {
-    color: '#cbd5e1',
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  price: {
-    fontSize: 20,
-    color: '#ffffff',
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  change: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  logo: { width: 64, height: 64, marginBottom: 16 },
+  symbol: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
+  name: { fontSize: 16, color: '#cbd5e1', marginBottom: 12 },
+  price: { fontSize: 20, fontWeight: '600', color: '#fff' },
+  change: { fontSize: 16, fontWeight: '600' },
+  endText: { color: 'white', fontSize: 16 },
   swipeInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 16,
   },
-  swipeText: {
-    color: '#94a3b8',
-    marginLeft: 8,
-    fontSize: 14,
-  },
+  swipeText: { color: '#94a3b8', marginLeft: 8 },
 });
