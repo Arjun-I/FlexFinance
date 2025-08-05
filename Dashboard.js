@@ -34,7 +34,7 @@ export default function Dashboard() {
     </View>
   );
 
-  const renderCharts = () => (
+  const renderSwipe = () => (
     <View style={styles.tabContent}>
       <SwipeStocks />
     </View>
@@ -98,13 +98,13 @@ export default function Dashboard() {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {selectedTab === 'overview' && renderOverview()}
-        {selectedTab === 'charts' && renderCharts()}
+        {selectedTab === 'swipe' && renderSwipe()}
         {selectedTab === 'investments' && renderInvestments()}
         {selectedTab === 'profile' && renderProfile()}
       </ScrollView>
 
       <View style={styles.tabBar}>
-        {['overview', 'charts', 'investments', 'profile'].map((tab) => (
+        {['overview', 'swipe', 'investments', 'profile'].map((tab) => (
           <TouchableOpacity
             key={tab}
             style={[styles.tabButton, selectedTab === tab && styles.activeTab]}
@@ -114,8 +114,8 @@ export default function Dashboard() {
               name={
                 tab === 'overview'
                   ? 'home'
-                  : tab === 'charts'
-                  ? 'bar-chart'
+                  : tab === 'swipe'
+                  ? 'swap-horizontal'
                   : tab === 'investments'
                   ? 'trending-up'
                   : 'person'
@@ -198,3 +198,4 @@ const styles = StyleSheet.create({
   activeTabLabel: { color: '#6366f1', fontWeight: '600' },
   comingSoon: { color: '#94a3b8', fontSize: 18, textAlign: 'center', marginTop: 100 },
 });
+ 

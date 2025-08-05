@@ -1,4 +1,3 @@
-// SWIPESTOCKS.JS
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -13,8 +12,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { LineChart } from 'react-native-svg-charts';
-import * as shape from 'd3-shape';
 
 const { width } = Dimensions.get('window');
 
@@ -42,24 +39,6 @@ const dummyStocks = [
   },
 ];
 
-const getAlphaVantageUrl = (symbol, timeframe) => {
-  const interval = timeframe === '1D' ? '5min' : 'daily';
-  const func = timeframe === '1D' ? 'TIME_SERIES_INTRADAY' : 'TIME_SERIES_DAILY';
-  return `https://www.alphavantage.co/query?function=${func}&symbol=${symbol}&apikey=${process.env.EXPO_PUBLIC_ALPHA_VANTAGE_KEY}${interval === '5min' ? '&interval=5min' : ''}`;
-};
-
-
-const parseTimeSeriesData = (data, timeframe) => {
-  const timeSeries = data['Time Series (Daily)'] || data['Time Series (5min)'];
-  if (!timeSeries) return null;
-  const prices = [];
-  for (let key in timeSeries) {
-    prices.push(parseFloat(timeSeries[key]['4. close']));
-    if (prices.length >= 10) break;
-  }
-  return prices.reverse();
-};
-
 const addLikedStock = async (stock) => {
   const uid = auth.currentUser?.uid;
   if (!uid) return;
@@ -71,25 +50,7 @@ const addLikedStock = async (stock) => {
 
 export default function SwipeStocks() {
   const [index, setIndex] = useState(0);
-  const [timeframe, setTimeframe] = useState('1M');
-  const [chartData, setChartData] = useState(null);
   const position = useRef(new Animated.ValueXY()).current;
-
-  useEffect(() => {
-    const fetchChartData = async () => {
-      const stock = dummyStocks[index];
-      if (!stock) return;
-      try {
-        const res = await fetch(getAlphaVantageUrl(stock.symbol, timeframe));
-        const data = await res.json();
-        const parsed = parseTimeSeriesData(data, timeframe);
-        setChartData(parsed);
-      } catch (err) {
-        console.error('Error fetching chart:', err);
-      }
-    };
-    fetchChartData();
-  }, [index, timeframe]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -130,37 +91,28 @@ export default function SwipeStocks() {
   const renderCard = (stock) => (
     <Animated.View
       {...panResponder.panHandlers}
-      style={[styles.card, { transform: position.getTranslateTransform() }]}
-    >
+      style={[styles.card, { transform: position.getTranslateTransform() }]}>
       <Image source={{ uri: stock.logo }} style={styles.logo} />
       <Text style={styles.symbol}>{stock.symbol}</Text>
       <Text style={styles.name}>{stock.name}</Text>
       <Text style={styles.price}>{stock.price}</Text>
-      <Text style={[styles.change, { color: stock.change.startsWith('+') ? '#10b981' : '#ef4444' }]}> {stock.change}</Text>
-
-      <View style={{ flexDirection: 'row', marginTop: 12 }}>
-        {['1D', '1W', '1M'].map((tf) => (
-          <TouchableOpacity onPress={() => setTimeframe(tf)} style={{ marginHorizontal: 8 }} key={tf}>
-            <Text style={{ color: tf === timeframe ? '#6366f1' : '#cbd5e1' }}>{tf}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {chartData && (
-        <LineChart
-          style={{ height: 180, width: width - 100, marginTop: 16 }}
-          data={chartData}
-          svg={{ stroke: '#6366f1', strokeWidth: 2 }}
-          contentInset={{ top: 20, bottom: 20 }}
-          curve={shape.curveNatural}
-        />
-      )}
+      <Text
+        style={[
+          styles.change,
+          { color: stock.change.startsWith('+') ? '#10b981' : '#ef4444' },
+        ]}>
+        {stock.change}
+      </Text>
     </Animated.View>
   );
 
   return (
     <View style={styles.container}>
-      {index < dummyStocks.length ? renderCard(dummyStocks[index]) : <Text style={{ color: 'white' }}>No more stocks!</Text>}
+      {index < dummyStocks.length ? (
+        renderCard(dummyStocks[index])
+      ) : (
+        <Text style={{ color: 'white' }}>No more stocks!</Text>
+      )}
       <View style={styles.swipeInfo}>
         <Ionicons name="information-circle" size={18} color="#94a3b8" />
         <Text style={styles.swipeText}>Swipe right to like, left to skip</Text>
@@ -178,7 +130,7 @@ const styles = StyleSheet.create({
   },
   card: {
     width: width - 60,
-    height: 420,
+    height: 360,
     borderRadius: 16,
     backgroundColor: '#1e293b',
     padding: 24,
