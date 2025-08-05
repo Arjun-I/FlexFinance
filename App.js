@@ -6,8 +6,7 @@ import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { app, auth } from './firebase';
-import { getFirestore } from 'firebase/firestore';
+import { auth, db } from './firebase';
 
 import LoginScreen from './LoginScreen';
 import RiskQuiz from './RiskQuiz';
@@ -15,7 +14,6 @@ import Dashboard from './Dashboard';
 
 const Stack = createNativeStackNavigator();
 
-export const db = getFirestore(app);
 
 export default function App() {
   const [user, setUser] = useState(null);

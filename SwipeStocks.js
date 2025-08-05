@@ -45,8 +45,9 @@ const dummyStocks = [
 const getAlphaVantageUrl = (symbol, timeframe) => {
   const interval = timeframe === '1D' ? '5min' : 'daily';
   const func = timeframe === '1D' ? 'TIME_SERIES_INTRADAY' : 'TIME_SERIES_DAILY';
-  return `https://www.alphavantage.co/query?function=${func}&symbol=${symbol}&apikey=ZHU7AGOYLAHOQ2OR${interval === '5min' ? '&interval=5min' : ''}`;
+  return `https://www.alphavantage.co/query?function=${func}&symbol=${symbol}&apikey=${process.env.EXPO_PUBLIC_ALPHA_VANTAGE_KEY}${interval === '5min' ? '&interval=5min' : ''}`;
 };
+
 
 const parseTimeSeriesData = (data, timeframe) => {
   const timeSeries = data['Time Series (Daily)'] || data['Time Series (5min)'];

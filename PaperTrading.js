@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, TextInput, Button, FlatList, StyleSheet, Alert, Dimensions } from 'react-native';
 import { PieChart, LineChart } from 'react-native-chart-kit';
 import { collection, doc, getDoc, getDocs, deleteDoc, updateDoc, addDoc } from 'firebase/firestore';
@@ -14,11 +14,9 @@ export default function PaperTrading() {
   const [industryData, setIndustryData] = useState([]);
   const [valueHistory, setValueHistory] = useState([]);
 
-  useEffect(() => {
-    fetchPortfolio();
-  }, []);
+  
 
-  const fetchPortfolio = async () => {
+ const fetchPortfolio = useCallback(async () => {
     const user = auth.currentUser;
     if (!user) return;
 
@@ -34,7 +32,11 @@ export default function PaperTrading() {
     } catch (err) {
       console.error('Failed to fetch portfolio:', err);
     }
-  };
+   }, []);
+
+  useEffect(() => {
+    fetchPortfolio();
+  }, [fetchPortfolio]);
 
   const buildIndustryData = (data) => {
     const industryMap = {};
@@ -49,7 +51,7 @@ export default function PaperTrading() {
     const colors = ['#60a5fa', '#34d399', '#f87171', '#fbbf24', '#a78bfa', '#f472b6', '#4ade80'];
     const chartData = Object.entries(industryMap).map(([industry, value], i) => ({
       name: industry,
-      population: value,
+      population: total ? (value / total) * 100 : 0,
       color: colors[i % colors.length],
       legendFontColor: '#fff',
       legendFontSize: 12,

@@ -70,14 +70,53 @@ const questions = [
   },
 ];
 
+const mapScoreToProfile = (score) => {
+  if (score <= 7) {
+    return {
+      level: 'Conservative',
+      description: 'You prefer stable investments with minimal risk.',
+      color: '#10b981',
+    };
+  }
+  if (score <= 11) {
+    return {
+      level: 'Moderate',
+      description: 'You are comfortable with a balance of risk and return.',
+      color: '#3b82f6',
+    };
+  }
+  if (score <= 15) {
+    return {
+      level: 'Growth',
+      description: 'You can tolerate more risk for higher potential returns.',
+      color: '#f59e0b',
+    };
+  }
+  return {
+    level: 'Aggressive',
+    description: 'You are willing to take high risks for maximum gains.',
+    color: '#ef4444',
+  };
+};
+
 export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState({});
   const [showResults, setShowResults] = useState(false);
 
-  const riskProfile = useMemo(() => {
-    if (!showResults) return null;
-    return answers;
+const { totalScore, percentage, profile: riskProfile } = useMemo(() => {
+    if (!showResults) {
+      return { totalScore: 0, percentage: 0, profile: null };
+    }
+    const numericScores = Object.values(answers).filter(
+      (value) => typeof value === 'number'
+    );
+    const totalScore = numericScores.reduce((sum, val) => sum + val, 0);
+    const percentage = Math.round(
+      (totalScore / (numericScores.length * 4)) * 100
+    );
+    const profile = mapScoreToProfile(totalScore);
+    return { totalScore, percentage, profile };
   }, [showResults, answers]);
 
   const handleAnswer = (score) => {
@@ -96,7 +135,7 @@ export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
       try {
         await setDoc(
           doc(db, 'users', user.uid),
-          { riskProfile: answers },
+          { riskProfile, answers },
           { merge: true }
         );
         if (typeof setHasCompletedQuiz === 'function') {
@@ -108,7 +147,7 @@ export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
       }
     }
   };
-  
+
   if (showResults) {
     return (
       <LinearGradient colors={['#0f172a', '#1e293b', '#334155']} style={styles.container}>
