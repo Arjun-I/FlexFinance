@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, TextInput, Button, FlatList, StyleSheet, Alert, Dimensions } from 'react-native';
 import { PieChart, LineChart } from 'react-native-chart-kit';
-import { collection, doc, getDoc, getDocs, deleteDoc, updateDoc, addDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, deleteDoc, updateDoc, addDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 const screenWidth = Dimensions.get('window').width;
@@ -94,8 +94,9 @@ export default function PaperTrading() {
         timestamp: new Date(),
         industry: 'Technology', // Default placeholder
       });
-
-      await updateDoc(doc(db, 'users', user.uid), {
+      const userDocRef = doc(db, 'users', user.uid);
+      await setDoc(userDocRef, {}, { merge: true });
+      await updateDoc(userDocRef, {
         cashBalance: cash - cost,
       });
 
@@ -105,7 +106,9 @@ export default function PaperTrading() {
     } catch (err) {
       if (err.code === 'permission-denied') {
         Alert.alert('Permission denied', 'Please log in to access your portfolio.');
-      } else {
+      } else if (err.code === 'not-found') {
+        Alert.alert('User not found', 'Please sign in to manage your portfolio.');
+      }else {
         console.error('Error buying stock:', err);
       }
     }
@@ -118,7 +121,9 @@ export default function PaperTrading() {
     const currentVal = (stock.shares || 0) * (stock.buyPrice || 0);
 
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
+      const userDocRef = doc(db, 'users', user.uid);
+      await setDoc(userDocRef, {}, { merge: true });
+      await updateDoc(userDocRef, {
         cashBalance: cash + currentVal,
       });
 
@@ -128,7 +133,9 @@ export default function PaperTrading() {
     } catch (err) {
       if (err.code === 'permission-denied') {
         Alert.alert('Permission denied', 'Please log in to access your portfolio.');
-      } else {
+      }else if (err.code === 'not-found') {
+        Alert.alert('User not found', 'Please sign in to manage your portfolio.');
+       } else {
         console.error('Error selling stock:', err);
       }
     }

@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, setDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 const { width } = Dimensions.get('window');
@@ -44,13 +44,16 @@ const addLikedStock = async (stock) => {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
     const userDocRef = doc(db, 'users', uid);
+    await setDoc(userDocRef, {}, { merge: true });
     await updateDoc(userDocRef, {
       likedStocks: arrayUnion(stock),
     });
   } catch (error) {
      if (error.code === 'permission-denied') {
       Alert.alert('Permission denied', 'Please log in to like stocks.');
-    } else {
+    } else if (error.code === 'not-found') {
+      Alert.alert('User not found', 'Please sign in to save liked stocks.');
+    }else {
       console.error('Error adding liked stock:', error);
     }
   }
