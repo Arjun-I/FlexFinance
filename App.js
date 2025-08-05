@@ -10,6 +10,10 @@ import { auth } from './firebase';
 import LoginScreen from './LoginScreen';
 import RiskQuiz from './RiskQuiz';
 import Dashboard from './Dashboard';
+import SettingsScreen from './SettingsScreen';
+import SupportScreen from './SupportScreen';
+import TermsScreen from './TermsScreen';
+import NotificationsScreen from './NotificationsScreen';
 
 
 const Stack = createNativeStackNavigator();
@@ -59,28 +63,32 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
-      <StatusBar style="light" />
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
-          animation: 'slide_from_right',
-        }}
-      >
-        {!user ? (
-          <Stack.Screen name="Login" component={LoginScreen} />
-        ) : !hasCompletedQuiz ? (
-          <Stack.Screen name="RiskQuiz">
-            {(props) => (
-              <RiskQuiz {...props} setHasCompletedQuiz={setHasCompletedQuiz} />
-            )}
-          </Stack.Screen>
-        ) : (
-          <Stack.Screen name="Dashboard" component={Dashboard} />
+  <NavigationContainer>
+    <StatusBar style="light" />
+    <Stack.Navigator
+      initialRouteName={
+        !user ? 'Login' : !hasCompletedQuiz ? 'RiskQuiz' : 'Dashboard'
+      }
+      screenOptions={{
+        headerShown: false,
+        animation: 'slide_from_right',
+      }}
+    >
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="RiskQuiz">
+        {(props) => (
+          <RiskQuiz {...props} setHasCompletedQuiz={setHasCompletedQuiz} />
         )}
-      </Stack.Navigator>
-    </NavigationContainer>
-  );
+      </Stack.Screen>
+      <Stack.Screen name="Dashboard" component={Dashboard} />
+      <Stack.Screen name="SettingsScreen" component={SettingsScreen} />
+      <Stack.Screen name="SupportScreen" component={SupportScreen} />
+      <Stack.Screen name="TermsScreen" component={TermsScreen} />
+      <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />
+    </Stack.Navigator>
+  </NavigationContainer>
+);
+
 }
 
 const styles = StyleSheet.create({

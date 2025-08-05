@@ -39,6 +39,7 @@ const dummyStocks = [
   },
 ];
 
+// Add liked stock to user's Firestore document
 const addLikedStock = async (stock) => {
   try {
     const uid = auth.currentUser?.uid;
@@ -49,13 +50,28 @@ const addLikedStock = async (stock) => {
       likedStocks: arrayUnion(stock),
     });
   } catch (error) {
-     if (error.code === 'permission-denied') {
+    if (error.code === 'permission-denied') {
       Alert.alert('Permission denied', 'Please log in to like stocks.');
-    } else if (error.code === 'not-found') {
-      Alert.alert('User not found', 'Please sign in to save liked stocks.');
-    }else {
+    } else {
       console.error('Error adding liked stock:', error);
     }
+  }
+};
+
+// Store rejected stock in a subcollection (for learning purposes)
+const storeRejectedStock = async (stock) => {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const rejectedDocRef = doc(db, 'users', uid, 'rejected', stock.symbol);
+    await setDoc(rejectedDocRef, {
+      symbol: stock.symbol,
+      name: stock.name,
+      logo: stock.logo,
+      rejectedAt: new Date(),
+    });
+  } catch (error) {
+    console.error('Error storing rejected stock:', error);
   }
 };
 
@@ -71,6 +87,7 @@ export default function SwipeStocks() {
       },
       onPanResponderRelease: (_, gesture) => {
         if (gesture.dx > 120) {
+          // Swiped right: like
           Animated.timing(position, {
             toValue: { x: 500, y: gesture.dy },
             duration: 300,
@@ -81,11 +98,13 @@ export default function SwipeStocks() {
             position.setValue({ x: 0, y: 0 });
           });
         } else if (gesture.dx < -120) {
+          // Swiped left: reject
           Animated.timing(position, {
             toValue: { x: -500, y: gesture.dy },
             duration: 300,
             useNativeDriver: false,
           }).start(() => {
+            storeRejectedStock(dummyStocks[index]);
             setIndex((prev) => prev + 1);
             position.setValue({ x: 0, y: 0 });
           });
@@ -102,7 +121,8 @@ export default function SwipeStocks() {
   const renderCard = (stock) => (
     <Animated.View
       {...panResponder.panHandlers}
-      style={[styles.card, { transform: position.getTranslateTransform() }]}>
+      style={[styles.card, { transform: position.getTranslateTransform() }]}
+    >
       <Image source={{ uri: stock.logo }} style={styles.logo} />
       <Text style={styles.symbol}>{stock.symbol}</Text>
       <Text style={styles.name}>{stock.name}</Text>
@@ -111,7 +131,8 @@ export default function SwipeStocks() {
         style={[
           styles.change,
           { color: stock.change.startsWith('+') ? '#10b981' : '#ef4444' },
-        ]}>
+        ]}
+      >
         {stock.change}
       </Text>
     </Animated.View>

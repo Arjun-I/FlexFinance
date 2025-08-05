@@ -1,25 +1,26 @@
 // DASHBOARD.JS
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
-import { auth } from './firebase';
+import { auth, db } from './firebase';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import SwipeStocks from './SwipeStocks';
 import InvestmentsScreen from './InvestmentsScreen';
 
-const { width } = Dimensions.get('window');
-
-export default function Dashboard() {
+export default function Dashboard({ navigation }) {
   const [selectedTab, setSelectedTab] = useState('overview');
   const user = auth.currentUser;
+  const [profile, setProfile] = useState(null);
+  const [portfolioValue, setPortfolioValue] = useState(0);
+  const [loadingOverview, setLoadingOverview] = useState(true);
 
   const handleSignOut = async () => {
     try {
@@ -29,9 +30,74 @@ export default function Dashboard() {
     }
   };
 
+   useEffect(() => {
+    const fetchOverviewData = async () => {
+      if (!user) return;
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        const data = userDoc.exists() ? userDoc.data() : {};
+
+        const portfolioSnap = await getDocs(
+          collection(db, 'users', user.uid, 'portfolio')
+        );
+        const holdingsValue = portfolioSnap.docs.reduce((sum, d) => {
+          const { shares = 0, buyPrice = 0 } = d.data();
+          return sum + shares * buyPrice;
+        }, 0);
+
+        const cash = data.cashBalance || 0;
+        setPortfolioValue(holdingsValue + cash);
+        setProfile(data);
+      } catch (err) {
+        console.error('Error fetching overview data:', err);
+      } finally {
+        setLoadingOverview(false);
+      }
+    };
+
+    if (selectedTab === 'overview') {
+      setLoadingOverview(true);
+      fetchOverviewData();
+    }
+  }, [selectedTab, user]);
+
   const renderOverview = () => (
     <View style={styles.tabContent}>
       <Text style={styles.comingSoon}>Overview coming soon!</Text>
+      {loadingOverview ? (
+        <Text style={styles.comingSoon}>Loading overview...</Text>
+      ) : (
+        <>
+          <View style={styles.overviewCard}>
+            <Text style={styles.metricLabel}>Total Portfolio Value</Text>
+            <Text style={styles.metricValue}>
+              {`$${portfolioValue.toFixed(2)}`}
+            </Text>
+          </View>
+
+          <View style={styles.overviewCard}>
+            <Text style={styles.metricLabel}>Last Login</Text>
+            <Text style={styles.metricValue}>
+              {user?.metadata?.lastSignInTime
+                ? new Date(user.metadata.lastSignInTime).toLocaleDateString()
+                : 'N/A'}
+            </Text>
+          </View>
+
+         {profile?.riskProfile && (
+  <View style={styles.overviewCard}>
+    <Text style={styles.metricLabel}>Your Risk Profile</Text>
+    <Text style={styles.metricValue}>Category Scores</Text>
+    <Text style={styles.metricDescription}>Volatility Tolerance: {profile.riskProfile.volatility || 0}</Text>
+    <Text style={styles.metricDescription}>Liquidity Need: {profile.riskProfile.liquidity || 0}</Text>
+    <Text style={styles.metricDescription}>Time Horizon: {profile.riskProfile.timeHorizon || 0}</Text>
+    <Text style={styles.metricDescription}>Investor Knowledge: {profile.riskProfile.knowledge || 0}</Text>
+    <Text style={styles.metricDescription}>Ethical Preference: {profile.riskProfile.ethics || 0}</Text>
+  </View>
+)}
+
+        </>
+      )}
     </View>
   );
 
@@ -43,10 +109,8 @@ export default function Dashboard() {
 
 const renderInvestments = () => (
     <View style={styles.tabContent}>
-    <View style={styles.tabContent}>
       <Text style={styles.comingSoon}>Your investments will show up here.</Text>
       <InvestmentsScreen />
-    </View>
     </View>
   );
 
@@ -60,6 +124,11 @@ const renderInvestments = () => (
         <Text style={styles.profileName}>{user?.displayName || 'User'}</Text>
         <Text style={styles.profileEmail}>{user?.email}</Text>
       </View>
+      
+      <TouchableOpacity
+        style={styles.menuItem}
+        onPress={() => navigation.navigate('SettingsScreen')}
+      ></TouchableOpacity>
 
       <TouchableOpacity style={styles.menuItem}>
         <Ionicons name="settings" size={24} color="#94a3b8" />
@@ -67,11 +136,21 @@ const renderInvestments = () => (
         <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
       </TouchableOpacity>
 
+      <TouchableOpacity
+        style={styles.menuItem}
+        onPress={() => navigation.navigate('SupportScreen')}
+      ></TouchableOpacity>
+
       <TouchableOpacity style={styles.menuItem}>
         <Ionicons name="help-circle" size={24} color="#94a3b8" />
         <Text style={styles.menuText}>Help & Support</Text>
         <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.menuItem}
+        onPress={() => navigation.navigate('TermsScreen')}
+      ></TouchableOpacity>
 
       <TouchableOpacity style={styles.menuItem}>
         <Ionicons name="document-text" size={24} color="#94a3b8" />
@@ -95,8 +174,10 @@ const renderInvestments = () => (
       <View style={styles.header}>
         <Text style={styles.headerTitle}>
          {selectedTab === 'investments' ? 'Investments' : 'FlexFinance'}
-        </Text>
-        <TouchableOpacity style={styles.notificationButton}>
+          </Text>
+         <TouchableOpacity
+          style={styles.notificationButton}
+          onPress={() => navigation.navigate('NotificationsScreen')}>
           <Ionicons name="notifications" size={24} color="#ffffff" />
         </TouchableOpacity>
       </View>
@@ -202,5 +283,17 @@ const styles = StyleSheet.create({
   tabLabel: { color: '#94a3b8', fontSize: 12, marginTop: 4 },
   activeTabLabel: { color: '#6366f1', fontWeight: '600' },
   comingSoon: { color: '#94a3b8', fontSize: 18, textAlign: 'center', marginTop: 100 },
+
+  overviewCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  metricLabel: { color: '#94a3b8', fontSize: 14 },
+  metricValue: { color: '#ffffff', fontSize: 20, fontWeight: 'bold', marginTop: 4 },
+  metricDescription: { color: '#94a3b8', fontSize: 14, marginTop: 8 },
 });
  
