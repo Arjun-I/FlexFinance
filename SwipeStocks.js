@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Dimensions,
-  TouchableOpacity,
   Image,
   Animated,
   PanResponder,
@@ -40,12 +39,16 @@ const dummyStocks = [
 ];
 
 const addLikedStock = async (stock) => {
-  const uid = auth.currentUser?.uid;
-  if (!uid) return;
-  const userDocRef = doc(db, 'users', uid);
-  await updateDoc(userDocRef, {
-    likedStocks: arrayUnion(stock),
-  });
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const userDocRef = doc(db, 'users', uid);
+    await updateDoc(userDocRef, {
+      likedStocks: arrayUnion(stock),
+    });
+  } catch (error) {
+    console.error('Error adding liked stock:', error);
+  }
 };
 
 export default function SwipeStocks() {

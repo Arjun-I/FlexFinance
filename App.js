@@ -5,8 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-import { auth, db } from './firebase';
+import { auth } from './firebase';
 
 import LoginScreen from './LoginScreen';
 import RiskQuiz from './RiskQuiz';

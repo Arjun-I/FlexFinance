@@ -22,7 +22,12 @@ export default function PaperTrading() {
 
     try {
       const userDoc = await getDoc(doc(db, 'users', user.uid));
-      setCash(userDoc.data()?.cashBalance || 10000);
+      if (userDoc.exists()) {
+        setCash(userDoc.data().cashBalance || 100000);
+      } else {
+        setCash(100000);
+      }
+
 
       const portfolioSnap = await getDocs(collection(db, 'users', user.uid, 'portfolio'));
       const data = portfolioSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -74,13 +79,13 @@ export default function PaperTrading() {
     if (!user || !ticker || !shares) return;
 
     const price = await fetchMockPrice(ticker);
-    const cost = price * parseInt(shares);
+    const cost = price * parseInt(shares, 10);
     if (cost > cash) return Alert.alert('Error', 'Not enough cash');
 
     try {
       await addDoc(collection(db, 'users', user.uid, 'portfolio'), {
         ticker: ticker.toUpperCase(),
-        shares: parseInt(shares),
+        shares: parseInt(shares, 10),
         buyPrice: price,
         timestamp: new Date(),
         industry: 'Technology', // Default placeholder

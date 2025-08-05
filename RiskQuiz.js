@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { auth } from './firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const questions = [
   {
@@ -138,12 +139,13 @@ const { totalScore, percentage, profile: riskProfile } = useMemo(() => {
           { riskProfile, answers },
           { merge: true }
         );
+        await AsyncStorage.setItem(`riskQuizCompleted_${user.uid}`, 'true');
         if (typeof setHasCompletedQuiz === 'function') {
           setHasCompletedQuiz(true);
         }
         navigation.navigate('Dashboard');
       } catch (err) {
-        console.error('Error saving risk profile to Firestore:', err);
+        cconsole.error('Error saving risk profile:', err);
       }
     }
   };
@@ -155,7 +157,7 @@ const { totalScore, percentage, profile: riskProfile } = useMemo(() => {
           <View style={styles.header}>
             <Ionicons name="trophy" size={60} color={riskProfile.color} />
             <Text style={styles.title}>Risk Assessment Complete!</Text>
-            <Text style={styles.subtitle}>Here's your risk profile</Text>
+            <Text style={styles.subtitle}>Here&apos;s your risk profile</Text>
           </View>
           <ResultCard profile={riskProfile} totalScore={totalScore} percentage={percentage} />
           <TouchableOpacity

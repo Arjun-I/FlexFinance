@@ -18,7 +18,21 @@ const firebaseConfig = {
   messagingSenderId: extra?.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: extra?.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
+const requiredFields = [
+  'apiKey',
+  'authDomain',
+  'projectId',
+  'storageBucket',
+  'messagingSenderId',
+  'appId',
+];
+const missing = requiredFields.filter((field) => !firebaseConfig[field]);
 
+if (missing.length > 0) {
+  const message = `Missing Firebase configuration fields: ${missing.join(', ')}`;
+  console.error(message);
+  throw new Error(message);
+}
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 let auth;

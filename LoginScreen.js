@@ -14,8 +14,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
-import { auth } from './firebase';
-import { db } from './firebase';
+import { auth, db } from './firebase';
 import { Ionicons } from '@expo/vector-icons';
 
 const createUserProfileIfMissing = async (uid, email) => {

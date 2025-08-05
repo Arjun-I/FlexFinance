@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import SwipeStocks from './SwipeStocks';
+import InvestmentsScreen from './InvestmentsScreen';
 
 const { width } = Dimensions.get('window');
 
@@ -40,11 +41,15 @@ export default function Dashboard() {
     </View>
   );
 
-  const renderInvestments = () => (
+const renderInvestments = () => (
+    <View style={styles.tabContent}>
     <View style={styles.tabContent}>
       <Text style={styles.comingSoon}>Your investments will show up here.</Text>
+      <InvestmentsScreen />
+    </View>
     </View>
   );
+
 
   const renderProfile = () => (
     <View style={styles.tabContent}>
@@ -89,7 +94,7 @@ export default function Dashboard() {
     >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>
-          {selectedTab === 'investments' ? 'Paper Trading' : 'FlexFinance'}
+         {selectedTab === 'investments' ? 'Investments' : 'FlexFinance'}
         </Text>
         <TouchableOpacity style={styles.notificationButton}>
           <Ionicons name="notifications" size={24} color="#ffffff" />
