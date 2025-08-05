@@ -7,6 +7,7 @@ import {
   Image,
   Animated,
   PanResponder,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
@@ -47,7 +48,11 @@ const addLikedStock = async (stock) => {
       likedStocks: arrayUnion(stock),
     });
   } catch (error) {
-    console.error('Error adding liked stock:', error);
+     if (error.code === 'permission-denied') {
+      Alert.alert('Permission denied', 'Please log in to like stocks.');
+    } else {
+      console.error('Error adding liked stock:', error);
+    }
   }
 };
 

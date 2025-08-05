@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -143,9 +144,14 @@ const { totalScore, percentage, profile: riskProfile } = useMemo(() => {
         if (typeof setHasCompletedQuiz === 'function') {
           setHasCompletedQuiz(true);
         }
-        navigation.navigate('Dashboard');
+        navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] });
       } catch (err) {
-        cconsole.error('Error saving risk profile:', err);
+        if (err.code === 'permission-denied') {
+          Alert.alert('Permission denied', 'Please log in again.');
+          navigation.navigate('Login');
+        } else {
+          console.error('Error saving risk profile:', err);
+        }
       }
     }
   };

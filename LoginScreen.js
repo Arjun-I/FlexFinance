@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { Ionicons } from '@expo/vector-icons';
@@ -62,6 +62,12 @@ export default function LoginScreen() {
     try {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, email, password);
+        const signInMethods = await fetchSignInMethodsForEmail(auth, email);
+        if (signInMethods.length === 0) {
+          Alert.alert('No Account Found', 'No account found with this email. Please sign up or check your email.');
+          setIsLogin(false);
+          return;
+        }
         Alert.alert('Success', 'Welcome back to FlexFinance!');
       } else {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);

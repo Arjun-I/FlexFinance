@@ -35,7 +35,11 @@ export default function PaperTrading() {
       buildIndustryData(data);
       buildValueHistory(data);
     } catch (err) {
-      console.error('Failed to fetch portfolio:', err);
+        if (err.code === 'permission-denied') {
+        Alert.alert('Permission denied', 'Please log in to access your portfolio.');
+      } else {
+        console.error('Failed to fetch portfolio:', err);
+      }
     }
    }, []);
 
@@ -99,7 +103,11 @@ export default function PaperTrading() {
       setShares('');
       fetchPortfolio();
     } catch (err) {
-      console.error('Error buying stock:', err);
+      if (err.code === 'permission-denied') {
+        Alert.alert('Permission denied', 'Please log in to access your portfolio.');
+      } else {
+        console.error('Error buying stock:', err);
+      }
     }
   };
 
@@ -118,7 +126,11 @@ export default function PaperTrading() {
 
       fetchPortfolio();
     } catch (err) {
-      console.error('Error selling stock:', err);
+      if (err.code === 'permission-denied') {
+        Alert.alert('Permission denied', 'Please log in to access your portfolio.');
+      } else {
+        console.error('Error selling stock:', err);
+      }
     }
   };
 
