@@ -183,7 +183,11 @@ const handleResetRiskProfile = async () => {
     <LinearGradient colors={['#0f172a', '#1e293b', '#334155']} style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>
-          {selectedTab === 'investments' ? 'Investments' : 'FlexFinance'}
+          {selectedTab === 'investments'
+            ? 'Investments'
+            : selectedTab === 'swipe'
+            ? 'Swipe Stocks'
+            : 'FlexFinance'}
         </Text>
         <TouchableOpacity
           style={styles.notificationButton}

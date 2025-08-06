@@ -74,7 +74,11 @@ export default function App() {
         animation: 'slide_from_right',
       }}
     >
-      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Login">
+        {(props) => (
+          <LoginScreen {...props} setHasCompletedQuiz={setHasCompletedQuiz} />
+        )}
+      </Stack.Screen>
       <Stack.Screen name="RiskQuiz">
         {(props) => (
           <RiskQuiz {...props} setHasCompletedQuiz={setHasCompletedQuiz} />

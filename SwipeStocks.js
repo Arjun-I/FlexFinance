@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,8 @@ const dummyStocks = [
     price: '$191.83',
     change: '+1.02%',
     logo: 'https://logo.clearbit.com/apple.com',
+    description: '',
+    growth: '',
   },
   {
     symbol: 'GOOGL',
@@ -29,6 +31,8 @@ const dummyStocks = [
     price: '$128.12',
     change: '-0.54%',
     logo: 'https://logo.clearbit.com/google.com',
+    description: '',
+    growth: '',
   },
   {
     symbol: 'TSLA',
@@ -36,6 +40,8 @@ const dummyStocks = [
     price: '$709.74',
     change: '+2.03%',
     logo: 'https://logo.clearbit.com/tesla.com',
+    description: '',
+    growth: '',
   },
 ];
 
@@ -60,14 +66,50 @@ const rejectStock = async (stock) => {
 };
 
 export default function SwipeStocks() {
+  const [stocks, setStocks] = useState(dummyStocks);
   const [index, setIndex] = useState(0);
   const position = useRef(new Animated.ValueXY()).current;
   const [animating, setAnimating] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState(null);
+
+  const fetchStockDetails = async (symbol) => {
+    setLoadingDetails(true);
+    setDetailsError(null);
+    try {
+      const result = await new Promise((resolve) =>
+        setTimeout(
+          () =>
+            resolve({
+              description: `${symbol} is a leading company in its sector.`,
+              growth: '5-year CAGR: 10%',
+            }),
+          1000
+        )
+      );
+      setStocks((prev) =>
+        prev.map((s) => (s.symbol === symbol ? { ...s, ...result } : s))
+      );
+    } catch (err) {
+      setDetailsError('Failed to load details.');
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  useEffect(() => {
+    if (index < stocks.length) {
+      const current = stocks[index];
+      if (!current.description || !current.growth) {
+        fetchStockDetails(current.symbol);
+      }
+    }
+  }, [index, stocks]);
 
   const handleSwipe = async (dir) => {
-    if (animating || index >= dummyStocks.length) return;
+    if (animating || index >= stocks.length) return;
     setAnimating(true);
-    const stock = dummyStocks[index];
+    const stock = stocks[index];
 
     if (dir === 'right') await addLikedStock(stock);
     else await rejectStock(stock);
@@ -82,7 +124,6 @@ export default function SwipeStocks() {
       setAnimating(false);
     });
   };
-
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -104,23 +145,33 @@ export default function SwipeStocks() {
 
   return (
     <View style={styles.container}>
-      {index < dummyStocks.length ? (
+      {index < stocks.length ? (
         <Animated.View
           {...panResponder.panHandlers}
           style={[styles.card, { transform: position.getTranslateTransform() }]}
         >
-          <Image source={{ uri: dummyStocks[index].logo }} style={styles.logo} />
-          <Text style={styles.symbol}>{dummyStocks[index].symbol}</Text>
-          <Text style={styles.name}>{dummyStocks[index].name}</Text>
-          <Text style={styles.price}>{dummyStocks[index].price}</Text>
+      <Image source={{ uri: stocks[index].logo }} style={styles.logo} />
+          <Text style={styles.symbol}>{stocks[index].symbol}</Text>
+          <Text style={styles.name}>{stocks[index].name}</Text>
+          <Text style={styles.price}>{stocks[index].price}</Text>
           <Text
             style={[
               styles.change,
-              { color: dummyStocks[index].change.startsWith('+') ? '#10b981' : '#ef4444' },
+              { color: stocks[index].change.startsWith('+') ? '#10b981' : '#ef4444' },
             ]}
           >
-            {dummyStocks[index].change}
+            {stocks[index].change}
           </Text>
+          {loadingDetails ? (
+            <Text style={styles.loadingText}>Loading details...</Text>
+          ) : detailsError ? (
+            <Text style={styles.errorText}>{detailsError}</Text>
+          ) : (
+            <>
+              <Text style={styles.description}>{stocks[index].description}</Text>
+              <Text style={styles.growth}>{stocks[index].growth}</Text>
+            </>
+          )}
         </Animated.View>
       ) : (
         <Text style={styles.endText}>No more stocks to show</Text>
@@ -137,7 +188,7 @@ const styles = StyleSheet.create({
   container: { alignItems: 'center', paddingBottom: 20 },
   card: {
     width: width - 60,
-    height: 360,
+    height: 420,
     borderRadius: 16,
     backgroundColor: '#1e293b',
     padding: 24,
@@ -154,6 +205,10 @@ const styles = StyleSheet.create({
   name: { fontSize: 16, color: '#cbd5e1', marginBottom: 12 },
   price: { fontSize: 20, fontWeight: '600', color: '#fff' },
   change: { fontSize: 16, fontWeight: '600' },
+  description: { color: '#cbd5e1', fontSize: 14, textAlign: 'center', marginTop: 12 },
+  growth: { color: '#fff', fontSize: 16, fontWeight: '600', marginTop: 8 },
+  loadingText: { color: '#cbd5e1', marginTop: 12 },
+  errorText: { color: '#ef4444', marginTop: 12 },
   endText: { color: 'white', fontSize: 16 },
   swipeInfo: {
     flexDirection: 'row',
