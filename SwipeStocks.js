@@ -2,31 +2,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Dimensions, Image,
-  Animated, PanResponder, Alert
+    Animated, PanResponder
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { doc, updateDoc, arrayUnion, setDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
+import { getStockDetails } from './llmStocks';
 
 const { width } = Dimensions.get('window');
 
-const dummyStocks = [
-  {
-    symbol: 'AAPL', name: 'Apple Inc.', price: '$191.83',
-    change: '+1.02%', logo: 'https://logo.clearbit.com/apple.com',
-    description: '', growth: '',
-  },
-  {
-    symbol: 'GOOGL', name: 'Alphabet Inc.', price: '$128.12',
-    change: '-0.54%', logo: 'https://logo.clearbit.com/google.com',
-    description: '', growth: '',
-  },
-  {
-    symbol: 'TSLA', name: 'Tesla Inc.', price: '$709.74',
-    change: '+2.03%', logo: 'https://logo.clearbit.com/tesla.com',
-    description: '', growth: '',
-  },
-];
 
 const addLikedStock = async (stock) => {
   const uid = auth.currentUser?.uid;
@@ -44,38 +28,29 @@ const rejectStock = async (stock) => {
 };
 
 export default function SwipeStocks() {
-  const [stocks, setStocks] = useState(dummyStocks);
+  const [stocks, setStocks] = useState([]);
   const [index, setIndex] = useState(0);
   const position = useRef(new Animated.ValueXY()).current;
   const [animating, setAnimating] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
-  const fetchStockDetails = async (symbol) => {
-    setLoadingDetails(true);
-    try {
-      const result = await new Promise((resolve) =>
-        setTimeout(() =>
-          resolve({
-            description: `${symbol} is a top performer.`,
-            growth: '5-year CAGR: 10%',
-          }), 1000)
-      );
-      setStocks((prev) =>
-        prev.map((s) => s.symbol === symbol ? { ...s, ...result } : s)
-      );
-    } catch (err) {
-      Alert.alert('Error loading stock details.');
-    } finally {
-      setLoadingDetails(false);
-    }
-  };
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (index < stocks.length) {
-      const current = stocks[index];
-      if (!current.description) fetchStockDetails(current.symbol);
-    }
-  }, [index]);
+    const loadStocks = async () => {
+      try {
+        const data = await Promise.all(symbols.map((s) => getStockDetails(s)));
+        setStocks(data);
+      } catch (err) {
+        console.error(err);
+        setError('Error loading stock details.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadStocks();
+  }, []);
 
   const handleSwipe = async (dir) => {
     if (animating || index >= stocks.length) return;
@@ -115,6 +90,22 @@ export default function SwipeStocks() {
     })
   ).current;
 
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.loadingText}>Loading stocks...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.loadingText}>{error}</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {index < stocks.length ? (
@@ -130,14 +121,8 @@ export default function SwipeStocks() {
             styles.change,
             { color: stocks[index].change.startsWith('+') ? '#10b981' : '#ef4444' },
           ]}>{stocks[index].change}</Text>
-          {loadingDetails ? (
-            <Text style={styles.loadingText}>Loading details...</Text>
-          ) : (
-            <>
-              <Text style={styles.description}>{stocks[index].description}</Text>
-              <Text style={styles.growth}>{stocks[index].growth}</Text>
-            </>
-          )}
+         <Text style={styles.description}>{stocks[index].description}</Text>
+          <Text style={styles.growth}>{stocks[index].growth}</Text>
         </Animated.View>
       ) : (
         <Text style={styles.endText}>No more stocks to show</Text>

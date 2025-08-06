@@ -28,22 +28,24 @@ const requiredFields = [
 ];
 const missing = requiredFields.filter((field) => !firebaseConfig[field]);
 
+let app;
+let auth;
+let db;
+
 if (missing.length > 0) {
   const message = `Missing Firebase configuration fields: ${missing.join(', ')}`;
-  console.error(message);
-  throw new Error(message);
+  console.warn(message);
+} else {
+  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+  try {
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+  } catch (e) {
+    auth = getAuth(app);
+  }
+  db = getFirestore(app);
 }
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-let auth;
-try {
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage),
-  });
-} catch (e) {
-  auth = getAuth(app);
-}
-
-const db = getFirestore(app);
 
 export { app, auth, db };
