@@ -6,9 +6,14 @@ A modern React Native finance app with Firebase authentication, risk assessment,
 
 - 🔐 **Firebase Authentication** - Secure login/signup with email and password
 - 📊 **Risk Assessment Quiz** - Interactive quiz to determine investment risk tolerance
-- 💰 **Financial Dashboard** - Overview of balance, income, expenses, and investments
+- 🤖 **AI-Generated Stock Recommendations** - Dynamic stock picks based on user preferences and risk profile
+- 💰 **Stock Swiping Interface** - Tinder-like interface for AI-generated stock discovery
+- 📈 **Paper Trading** - Practice trading with virtual money and real-time data
+- 🎯 **Personalized Portfolio** - Track liked stocks and portfolio performance
 - 🎨 **Modern UI** - Beautiful gradient backgrounds and smooth animations
 - 📱 **Responsive Design** - Works on iOS and Android
+- 🧠 **LLM-Powered Analysis** - AI-driven stock analysis and insights
+- 🔄 **Daily Stock Refresh** - New personalized recommendations each day
 
 ## Screenshots
 
@@ -37,16 +42,26 @@ A modern React Native finance app with Firebase authentication, risk assessment,
    npm install
    ```
 
-2. **Firebase Configuration**
+2. **Environment Configuration**
+   - Copy `env.example` to `.env`
+   - Add your Firebase and OpenAI API keys
+   - Configure your environment variables
+
+3. **Firebase Configuration**
    - Your Firebase config is already set up in `firebase.js`
    - Make sure your Firebase project has Authentication enabled
+   - Enable Email/Password authentication in Firebase Console
 
-3. **Run the App**
+4. **LLM Integration (Optional)**
+   - Add your OpenAI API key to `.env` for AI recommendations
+   - Without the API key, the app will use fallback recommendations
+
+5. **Run the App**
    ```bash
    npm start
    ```
 
-4. **Test on Device/Simulator**
+6. **Test on Device/Simulator**
    - Press `i` for iOS simulator
    - Press `a` for Android emulator
    - Scan QR code with Expo Go app
@@ -65,18 +80,26 @@ A modern React Native finance app with Firebase authentication, risk assessment,
 - **React Navigation** - Screen navigation
 - **Expo Linear Gradient** - Beautiful gradient backgrounds
 - **Expo Vector Icons** - Icon library
+- **OpenAI API** - LLM integration for personalized recommendations
+- **Alpha Vantage API** - Real-time stock data and market information
 
 ## File Structure
 
 ```
 FlexFinance-1/
-├── App.js              # Main app component with navigation
-├── firebase.js         # Firebase configuration
-├── LoginScreen.js      # Authentication screen
-├── RiskQuiz.js         # Risk assessment quiz
-├── Dashboard.js        # Main dashboard with tabs
-├── package.json        # Dependencies and scripts
-└── README.md          # This file
+├── App.js                    # Main app component with navigation
+├── firebase.js               # Firebase configuration
+├── LoginScreen.js            # Authentication screen
+├── RiskQuiz.js               # Risk assessment quiz
+├── Dashboard.js              # Main dashboard with tabs
+├── SwipeStocksGenerated.js   # AI-generated stock swiping interface
+├── stockGenerationService.js # Stock generation and Alpha Vantage integration
+├── llmService.js             # LLM integration service
+├── ErrorBoundary.js          # Error handling component
+├── InvestmentsScreen.js      # Portfolio and stock preferences
+├── PaperTrading.js           # Paper trading functionality
+├── package.json              # Dependencies and scripts
+└── README.md                # This file
 ```
 
 ## Customization

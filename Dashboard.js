@@ -16,9 +16,11 @@ import {
   collection,
   getDocs,
   updateDoc,
+  deleteDoc,
+  setDoc,
 } from 'firebase/firestore';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import SwipeStocks from './SwipeStocks';
+
+import SwipeStocksMock from './SwipeStocksMock';
 import InvestmentsScreen from './InvestmentsScreen';
 
 export default function Dashboard({ navigation }) {
@@ -31,8 +33,18 @@ export default function Dashboard({ navigation }) {
   const handleSignOut = async () => {
     try {
       await signOut(auth);
+      // Force navigation to login screen
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      });
     } catch (error) {
       console.error('Error signing out:', error);
+      // Even if signOut fails, navigate to login
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      });
     }
   };
 
@@ -40,15 +52,42 @@ export default function Dashboard({ navigation }) {
     try {
       if (!user) return;
 
+      // Clear only quiz-related data, preserve investments
       const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, { riskProfile: {} });
+      await updateDoc(userDocRef, { 
+        riskProfile: {},
+        quizCompleted: false,
+        likedStocks: [], // Clear liked stocks for swiping
+        lastUpdated: new Date()
+        // Note: NOT clearing cashBalance or portfolio investments
+      });
 
-      await AsyncStorage.removeItem(`riskQuizCompleted_${user.uid}`);
+      // Clear preferences subcollection
+      const quizRef = doc(db, 'users', user.uid, 'preferences', 'quiz');
+      await setDoc(quizRef, { completed: false });
 
-      alert('Risk profile reset. You will retake the quiz on next login.');
-      await signOut(auth);
+      // Clear rejected stocks (swipe history)
+      const rejectedSnap = await getDocs(collection(db, 'users', user.uid, 'rejected'));
+      for (const doc of rejectedSnap.docs) {
+        await deleteDoc(doc.ref);
+      }
+
+      // Clear value history (but keep portfolio)
+      const historySnap = await getDocs(collection(db, 'users', user.uid, 'valueHistory'));
+      for (const doc of historySnap.docs) {
+        await deleteDoc(doc.ref);
+      }
+
+      alert('Risk profile reset. Your investments are preserved. You will retake the quiz.');
+      
+      // Force navigation to RiskQuiz
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'RiskQuiz' }],
+      });
     } catch (err) {
       console.error('Error resetting risk profile:', err);
+      alert('Error resetting profile. Please try again.');
     }
   };
 
@@ -56,12 +95,19 @@ export default function Dashboard({ navigation }) {
     const fetchOverviewData = async () => {
       if (!user) return;
       try {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        const data = userDoc.exists() ? userDoc.data() : {};
-
-        const portfolioSnap = await getDocs(
-          collection(db, 'users', user.uid, 'portfolio')
+        // Add timeout to prevent hanging
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Overview fetch timeout')), 10000)
         );
+
+        const fetchPromise = Promise.all([
+          getDoc(doc(db, 'users', user.uid)),
+          getDocs(collection(db, 'users', user.uid, 'portfolio'))
+        ]);
+
+        const [userDoc, portfolioSnap] = await Promise.race([fetchPromise, timeoutPromise]);
+        
+        const data = userDoc.exists() ? userDoc.data() : {};
         const holdingsValue = portfolioSnap.docs.reduce((sum, d) => {
           const { shares = 0, buyPrice = 0 } = d.data();
           return sum + shares * buyPrice;
@@ -72,6 +118,9 @@ export default function Dashboard({ navigation }) {
         setProfile(data);
       } catch (err) {
         console.error('Error fetching overview data:', err);
+        // Set default values on error
+        setPortfolioValue(0);
+        setProfile({});
       } finally {
         setLoadingOverview(false);
       }
@@ -84,7 +133,7 @@ export default function Dashboard({ navigation }) {
   }, [selectedTab, user]);
 
   const renderOverview = () => (
-    <View style={styles.tabContent}>
+    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
       {loadingOverview ? (
         <Text style={styles.comingSoon}>Loading overview...</Text>
       ) : (
@@ -158,12 +207,12 @@ export default function Dashboard({ navigation }) {
           )}
         </>
       )}
-    </View>
+    </ScrollView>
   );
 
   const renderSwipe = () => (
     <View style={styles.tabContent}>
-      <SwipeStocks />
+      <SwipeStocksMock />
     </View>
   );
 
@@ -174,7 +223,7 @@ export default function Dashboard({ navigation }) {
   );
 
   const renderProfile = () => (
-    <View style={styles.tabContent}>
+    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
       <View style={styles.profileCard}>
         <View style={styles.profileAvatar}>
           <Ionicons name="person" size={40} color="#6366f1" />
@@ -218,7 +267,7 @@ export default function Dashboard({ navigation }) {
         <Text style={[styles.menuText, { color: '#ef4444' }]}>Sign Out</Text>
         <Ionicons name="chevron-forward" size={20} color="#ef4444" />
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 
   return (
@@ -244,12 +293,12 @@ export default function Dashboard({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.content}>
         {selectedTab === 'overview' && renderOverview()}
         {selectedTab === 'swipe' && renderSwipe()}
         {selectedTab === 'investments' && renderInvestments()}
         {selectedTab === 'profile' && renderProfile()}
-      </ScrollView>
+      </View>
 
       <View style={styles.tabBar}>
         {['overview', 'swipe', 'investments', 'profile'].map((tab) => (

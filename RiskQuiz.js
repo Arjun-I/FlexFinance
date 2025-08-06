@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { auth } from './firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import stockGenerationService from './stockGenerationService';
 
 const questions = [
   {
@@ -78,6 +78,19 @@ export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
   });
   const [showResults, setShowResults] = useState(false);
 
+  // Reset quiz state when component mounts (for reset functionality)
+  useEffect(() => {
+    setCurrentQuestion(0);
+    setCategoryScores({
+      volatility: 0,
+      liquidity: 0,
+      timeHorizon: 0,
+      knowledge: 0,
+      ethics: 0,
+    });
+    setShowResults(false);
+  }, []);
+
   const handleAnswer = (scores) => {
     setCategoryScores((prev) => {
       const updated = { ...prev };
@@ -101,14 +114,36 @@ export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
         const profileRef = doc(db, 'users', user.uid);
         await setDoc(profileRef, {
           riskProfile: categoryScores,
+          quizCompletedAt: new Date(),
+          quizCompleted: true,
         }, { merge: true });
 
-        await AsyncStorage.setItem(`riskQuizCompleted_${user.uid}`, 'true');
+        // Store completion in Firestore instead of AsyncStorage
+        await setDoc(doc(db, 'users', user.uid, 'preferences', 'quiz'), {
+          completed: true,
+          completedAt: new Date(),
+          riskProfile: categoryScores,
+        });
+
+        // Generate personalized stock recommendations
+        try {
+          console.log('🔄 Generating personalized stock recommendations...');
+          await stockGenerationService.generateDailyStocks();
+          console.log('✅ Stock recommendations generated successfully');
+        } catch (error) {
+          console.error('⚠️ Error generating stock recommendations:', error);
+          // Don't block the quiz completion if stock generation fails
+        }
+
         setHasCompletedQuiz(true);
-        navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] });
+        // Force navigation with reset to prevent back navigation
+        navigation.reset({ 
+          index: 0, 
+          routes: [{ name: 'Dashboard' }] 
+        });
       } catch (err) {
         console.error('Error saving risk profile:', err);
-        Alert.alert('Error', 'Failed to save risk profile.');
+        Alert.alert('Error', 'Failed to save risk profile. Please try again.');
       }
     }
   };

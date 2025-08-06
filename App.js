@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { onAuthStateChanged } from 'firebase/auth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth } from './firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
 
 import LoginScreen from './LoginScreen';
 import RiskQuiz from './RiskQuiz';
@@ -14,6 +14,7 @@ import SettingsScreen from './SettingsScreen';
 import SupportScreen from './SupportScreen';
 import TermsScreen from './TermsScreen';
 import NotificationsScreen from './NotificationsScreen';
+import ErrorBoundary from './ErrorBoundary';
 
 const Stack = createNativeStackNavigator();
 
@@ -24,18 +25,9 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('Auth state changed:', user ? 'User logged in' : 'User logged out');
       setUser(user);
-      if (user) {
-        try {
-          const value = await AsyncStorage.getItem(`riskQuizCompleted_${user.uid}`);
-          setHasCompletedQuiz(value === 'true');
-        } catch (err) {
-          console.error('Error loading quiz completion state:', err);
-          setHasCompletedQuiz(false);
-        }
-      } else {
-        setHasCompletedQuiz(false);
-      }
+      setHasCompletedQuiz(false); // Always show quiz for now
       setLoading(false);
     });
 
@@ -52,34 +44,34 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
-      <StatusBar style="light" />
-      <Stack.Navigator
-        initialRouteName={
-          !user ? 'Login' : !hasCompletedQuiz ? 'RiskQuiz' : 'Dashboard'
-        }
-        screenOptions={{
-          headerShown: false,
-          animation: 'slide_from_right',
-        }}
-      >
-        <Stack.Screen name="Login">
-          {(props) => (
-            <LoginScreen {...props} setHasCompletedQuiz={setHasCompletedQuiz} />
-          )}
-        </Stack.Screen>
-        <Stack.Screen name="RiskQuiz">
-          {(props) => (
-            <RiskQuiz {...props} setHasCompletedQuiz={setHasCompletedQuiz} />
-          )}
-        </Stack.Screen>
-        <Stack.Screen name="Dashboard" component={Dashboard} />
-        <Stack.Screen name="SettingsScreen" component={SettingsScreen} />
-        <Stack.Screen name="SupportScreen" component={SupportScreen} />
-        <Stack.Screen name="TermsScreen" component={TermsScreen} />
-        <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <ErrorBoundary>
+      <NavigationContainer>
+        <StatusBar style="light" />
+        <Stack.Navigator
+          initialRouteName={!user ? 'Login' : 'RiskQuiz'}
+          screenOptions={{
+            headerShown: false,
+            animation: 'slide_from_right',
+          }}
+        >
+          <Stack.Screen name="Login">
+            {(props) => (
+              <LoginScreen {...props} setHasCompletedQuiz={setHasCompletedQuiz} />
+            )}
+          </Stack.Screen>
+          <Stack.Screen name="RiskQuiz">
+            {(props) => (
+              <RiskQuiz {...props} setHasCompletedQuiz={setHasCompletedQuiz} />
+            )}
+          </Stack.Screen>
+          <Stack.Screen name="Dashboard" component={Dashboard} />
+          <Stack.Screen name="SettingsScreen" component={SettingsScreen} />
+          <Stack.Screen name="SupportScreen" component={SupportScreen} />
+          <Stack.Screen name="TermsScreen" component={TermsScreen} />
+          <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </ErrorBoundary>
   );
 }
 

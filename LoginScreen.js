@@ -13,10 +13,9 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const createUserProfileIfMissing = async (uid, email) => {
   const userRef = doc(db, 'users', uid);
@@ -76,17 +75,29 @@ export default function LoginScreen({ navigation, setHasCompletedQuiz }) {
       const user = userCredential.user;
       let quizCompleted = false;
       try {
-        const quizFlag = await AsyncStorage.getItem(`riskQuizCompleted_${user.uid}`);
-        quizCompleted = quizFlag === 'true';
+        // Check quiz completion from Firestore instead of AsyncStorage
+        const quizDoc = await getDoc(doc(db, 'users', user.uid, 'preferences', 'quiz'));
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        
+        const quizCompletedFromDoc = quizDoc.exists() && quizDoc.data()?.completed;
+        const userData = userDoc.exists() ? userDoc.data() : {};
+        const hasRiskProfile = userData.quizCompleted || userData.riskProfile;
+        
+        quizCompleted = quizCompletedFromDoc || hasRiskProfile;
       } catch (err) {
         console.error('Error fetching quiz completion state:', err);
+        quizCompleted = false;
       }
 
       if (setHasCompletedQuiz) {
         setHasCompletedQuiz(quizCompleted);
       }
 
-      navigation.replace(quizCompleted ? 'Dashboard' : 'RiskQuiz');
+      // Force navigation with reset to prevent back navigation
+      navigation.reset({
+        index: 0,
+        routes: [{ name: isLogin ? (quizCompleted ? 'Dashboard' : 'RiskQuiz') : 'RiskQuiz' }],
+      });
     } catch (error) {
       let errorMessage = 'An error occurred. Please try again.';
       switch (error.code) {
