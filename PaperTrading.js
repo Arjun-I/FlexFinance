@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  ScrollView,
   View,
   Text,
   TextInput,
@@ -10,7 +9,8 @@ import {
   Alert,
   Dimensions,
 } from 'react-native';
-import { VictoryPie, VictoryLine, VictoryChart, VictoryTheme } from 'victory-native';
+import { VictoryPie, VictoryLine, VictoryChart } from 'victory-native';
+import { VictoryTheme } from 'victory-native';
 import {
   collection,
   doc,
@@ -19,6 +19,7 @@ import {
   deleteDoc,
   updateDoc,
   addDoc,
+  setDoc,
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
@@ -81,7 +82,7 @@ export default function PaperTrading() {
 
     const chartData = Object.entries(industryMap).map(([industry, value]) => ({
       x: industry,
-      y: total ? ((value / total) * 100).toFixed(2) : 0,
+      y: total ? parseFloat(((value / total) * 100).toFixed(2)) : 0,
     }));
 
     setIndustryData(chartData);
@@ -89,21 +90,36 @@ export default function PaperTrading() {
 
   const buildValueHistory = async (data, userId, cashBalance) => {
     try {
-      const totalValue = cashBalance + data.reduce((sum, stock) =>
-        sum + (stock.shares || 0) * (stock.buyPrice || 0), 0
-      );
+      const totalValue = cashBalance +
+        data.reduce((sum, stock) => sum + (stock.shares || 0) * (stock.buyPrice || 0), 0);
 
-      await addDoc(collection(db, 'users', userId, 'valueHistory'), {
-        timestamp: new Date().toISOString(),
+      const now = new Date();
+      const dateId = now.toISOString().split('T')[0];
+      const historyRef = doc(db, 'users', userId, 'valueHistory', dateId);
+      await setDoc(historyRef, {
+        timestamp: now.toISOString(),
         totalValue,
       });
 
       const historySnap = await getDocs(collection(db, 'users', userId, 'valueHistory'));
-      const sortedHistory = historySnap.docs
-        .map((doc) => doc.data())
+      let sortedHistory = historySnap.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
         .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
+    const MAX_HISTORY = 30;
+      if (sortedHistory.length > MAX_HISTORY) {
+        const excess = sortedHistory.length - MAX_HISTORY;
+        const oldEntries = sortedHistory.slice(0, excess);
+        await Promise.all(
+          oldEntries.map((entry) =>
+            deleteDoc(doc(db, 'users', userId, 'valueHistory', entry.id))
+          )
+        );
+        sortedHistory = sortedHistory.slice(excess);
+      }
+
       setValueHistory(sortedHistory);
+      
     } catch (err) {
       console.error('Error building value history:', err);
     }
@@ -178,76 +194,83 @@ export default function PaperTrading() {
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.header}>Cash: ${cash.toFixed(2)}</Text>
-
-      <FlatList
-        data={portfolio}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.holding}>
-            <Text style={{ color: 'white' }}>
-              {item.shares}x {item.ticker} @ ${item.buyPrice}
-            </Text>
-            <Button title="Sell" onPress={() => sellStock(item)} />
-          </View>
-        )}
-      />
-
-      <TextInput
-        placeholder="Ticker (e.g. AAPL)"
-        value={ticker}
-        onChangeText={setTicker}
-        style={styles.input}
-      />
-      <TextInput
-        placeholder="Shares"
-        value={shares}
-        onChangeText={setShares}
-        keyboardType="numeric"
-        style={styles.input}
-      />
-      <Button title="Buy" onPress={buyStock} />
-
-      <Text style={styles.chartHeader}>Industry Allocation</Text>
-      {industryData.length > 0 && (
-        <VictoryPie
-          data={industryData}
-          colorScale="qualitative"
-          width={screenWidth}
-          height={220}
-          style={{
-            labels: { fill: 'white', fontSize: 12 },
-          }}
-        />
+<FlatList
+      style={styles.screen}
+      contentContainerStyle={styles.container}
+      data={portfolio}
+      keyExtractor={(item) => item.id}
+      renderItem={({ item }) => (
+        <View style={styles.holding}>
+          <Text style={{ color: 'white' }}>
+            {item.shares}x {item.ticker} @ ${item.buyPrice}
+          </Text>
+          <Button title="Sell" onPress={() => sellStock(item)} />
+        </View>
       )}
-
-      <Text style={styles.chartHeader}>Portfolio Value Over Time</Text>
-      {valueHistory.length > 0 && (
-        <VictoryChart
-          theme={VictoryTheme.material}
-          width={screenWidth}
-          height={240}
-          domainPadding={20}
-        >
-          <VictoryLine
-            interpolation="monotoneX"
-            style={{
-              data: { stroke: '#6366f1' },
-            }}
-            data={valueHistory.map((entry) => ({
-              x: new Date(entry.timestamp).toLocaleDateString(),
-              y: entry.totalValue,
-            }))}
+      ListHeaderComponent={
+        <Text style={styles.header}>Cash: ${cash.toFixed(2)}</Text>
+      }
+      ListFooterComponent={
+        <View>
+          <TextInput
+            placeholder="Ticker (e.g. AAPL)"
+            value={ticker}
+            onChangeText={setTicker}
+            style={styles.input}
           />
-        </VictoryChart>
-      )}
-    </ScrollView>
-  );
+
+               <TextInput
+            placeholder="Shares"
+            value={shares}
+            onChangeText={setShares}
+            keyboardType="numeric"
+            style={styles.input}
+          />
+          <Button title="Buy" onPress={buyStock} />
+
+          <Text style={styles.chartHeader}>Industry Allocation</Text>
+          {industryData.length > 0 && (
+            <VictoryPie
+              data={industryData}
+              colorScale="qualitative"
+              width={screenWidth}
+              height={220}
+              style={{
+                labels: { fill: 'white', fontSize: 12 },
+              }}
+            />
+          )}
+
+          <Text style={styles.chartHeader}>Portfolio Value Over Time</Text>
+          {valueHistory.length > 0 && (
+            <VictoryChart
+              theme={VictoryTheme.material}
+              width={screenWidth}
+              height={240}
+              domainPadding={20}
+            >
+              <VictoryLine
+                interpolation="monotoneX"
+                style={{
+                  data: { stroke: '#6366f1' },
+                }}
+                data={valueHistory.map((entry) => ({
+                  x: new Date(entry.timestamp).toLocaleDateString(),
+                  y: entry.totalValue,
+                }))}
+              />
+            </VictoryChart>
+          )}
+        </View>
+      }
+    />
+    );
 }
 
+
 const styles = StyleSheet.create({
-  container: { padding: 16, backgroundColor: '#0f172a' },
+ screen: { backgroundColor: '#0f172a' },
+  container: { padding: 16 },
   header: { fontSize: 18, fontWeight: 'bold', color: 'white', marginBottom: 12 },
   holding: {
     flexDirection: 'row',

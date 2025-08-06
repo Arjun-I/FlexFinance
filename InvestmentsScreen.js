@@ -1,13 +1,13 @@
 import React from 'react';
-import { Text, StyleSheet, ScrollView } from 'react-native';
+import { Text, StyleSheet, View } from 'react-native';
 import PaperTrading from './PaperTrading';
 
 export default function InvestmentsScreen() {
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 120 }}>
+    <View style={styles.container}>
       <Text style={styles.title}>Your Paper Portfolio</Text>
       <PaperTrading />
-    </ScrollView>
+    </View>
   );
 }
 

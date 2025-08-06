@@ -11,6 +11,8 @@ import { getStockDetails } from './llmStocks';
 
 const { width } = Dimensions.get('window');
 
+const symbols = ['AAPL', 'MSFT'];
+
 
 const addLikedStock = async (stock) => {
   const uid = auth.currentUser?.uid;
@@ -32,7 +34,7 @@ export default function SwipeStocks() {
   const [index, setIndex] = useState(0);
   const position = useRef(new Animated.ValueXY()).current;
   const [animating, setAnimating] = useState(false);
-  const [loadingDetails, setLoadingDetails] = useState(false);
+
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
