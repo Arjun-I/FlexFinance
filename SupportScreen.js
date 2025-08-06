@@ -3,7 +3,7 @@ import { Text, StyleSheet, View, Linking, TouchableOpacity, ScrollView } from 'r
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function SupportScreen() {
+export default function SupportScreen({ navigation }) {
   const openSupportEmail = () => {
     const subject = encodeURIComponent('Support Request - FlexFinance App');
     const body = encodeURIComponent('Hi FlexFinance Support,\n\nI need help with...');
@@ -15,6 +15,10 @@ export default function SupportScreen() {
     <LinearGradient colors={['#0f172a', '#1e293b', '#334155']} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.title}>Help & Support</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginBottom: 20, flexDirection: 'row', alignItems: 'center' }}>
+  <Ionicons name="chevron-back" size={28} color="#fff" />
+  <Text style={{ color: '#fff', fontSize: 16 }}>Back</Text>
+</TouchableOpacity>
 
         <View style={styles.section}>
           <Text style={styles.question}>❓ How do I reset my password?</Text>

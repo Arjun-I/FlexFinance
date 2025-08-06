@@ -10,7 +10,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
-import { doc, getDoc, collection, getDocs, updateDoc } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  collection,
+  getDocs,
+  updateDoc,
+} from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SwipeStocks from './SwipeStocks';
 import InvestmentsScreen from './InvestmentsScreen';
@@ -30,26 +36,21 @@ export default function Dashboard({ navigation }) {
     }
   };
 
+  const handleResetRiskProfile = async () => {
+    try {
+      if (!user) return;
 
+      const userDocRef = doc(db, 'users', user.uid);
+      await updateDoc(userDocRef, { riskProfile: {} });
 
-// Inside Dashboard.js
-const handleResetRiskProfile = async () => {
-  try {
-    if (!user) return;
+      await AsyncStorage.removeItem(`riskQuizCompleted_${user.uid}`);
 
-    const userDocRef = doc(db, 'users', user.uid);
-    await updateDoc(userDocRef, { riskProfile: {} });
-
-    await AsyncStorage.removeItem(`riskQuizCompleted_${user.uid}`);
-
-    alert('Risk profile reset. You will retake the quiz on next login.');
-
-    // Optional: Log the user out so they'll take the quiz again on next login
-    await signOut(auth); // This will send them back to the Login screen
-  } catch (err) {
-    console.error('Error resetting risk profile:', err);
-  }
-};
+      alert('Risk profile reset. You will retake the quiz on next login.');
+      await signOut(auth);
+    } catch (err) {
+      console.error('Error resetting risk profile:', err);
+    }
+  };
 
   useEffect(() => {
     const fetchOverviewData = async () => {
@@ -58,7 +59,9 @@ const handleResetRiskProfile = async () => {
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         const data = userDoc.exists() ? userDoc.data() : {};
 
-        const portfolioSnap = await getDocs(collection(db, 'users', user.uid, 'portfolio'));
+        const portfolioSnap = await getDocs(
+          collection(db, 'users', user.uid, 'portfolio')
+        );
         const holdingsValue = portfolioSnap.docs.reduce((sum, d) => {
           const { shares = 0, buyPrice = 0 } = d.data();
           return sum + shares * buyPrice;
@@ -88,22 +91,36 @@ const handleResetRiskProfile = async () => {
         <>
           <View style={styles.overviewCard}>
             <View style={styles.metricRow}>
-              <Ionicons name="wallet" size={24} color="#10b981" style={styles.metricIcon} />
+              <Ionicons
+                name="wallet"
+                size={24}
+                color="#10b981"
+                style={styles.metricIcon}
+              />
               <View>
                 <Text style={styles.metricLabel}>Total Portfolio Value</Text>
-                <Text style={styles.metricValue}>${portfolioValue.toFixed(2)}</Text>
+                <Text style={styles.metricValue}>
+                  ${portfolioValue.toFixed(2)}
+                </Text>
               </View>
             </View>
           </View>
 
           <View style={styles.overviewCard}>
             <View style={styles.metricRow}>
-              <Ionicons name="calendar" size={24} color="#facc15" style={styles.metricIcon} />
+              <Ionicons
+                name="calendar"
+                size={24}
+                color="#facc15"
+                style={styles.metricIcon}
+              />
               <View>
                 <Text style={styles.metricLabel}>Last Login</Text>
                 <Text style={styles.metricValue}>
                   {user?.metadata?.lastSignInTime
-                    ? new Date(user.metadata.lastSignInTime).toLocaleDateString()
+                    ? new Date(
+                        user.metadata.lastSignInTime
+                      ).toLocaleDateString()
                     : 'N/A'}
                 </Text>
               </View>
@@ -114,14 +131,27 @@ const handleResetRiskProfile = async () => {
             <View style={styles.overviewCard}>
               <Text style={styles.metricLabel}>Your Risk Profile</Text>
               <View style={styles.riskGrid}>
-                <Text style={styles.metricDescription}>📈 Volatility: {profile.riskProfile.volatility || 0}</Text>
-                <Text style={styles.metricDescription}>💧 Liquidity: {profile.riskProfile.liquidity || 0}</Text>
-                <Text style={styles.metricDescription}>⏳ Horizon: {profile.riskProfile.timeHorizon || 0}</Text>
-                <Text style={styles.metricDescription}>📚 Knowledge: {profile.riskProfile.knowledge || 0}</Text>
-                <Text style={styles.metricDescription}>🌱 Ethics: {profile.riskProfile.ethics || 0}</Text>
+                <Text style={styles.metricDescription}>
+                  📈 Volatility: {profile.riskProfile.volatility || 0}
+                </Text>
+                <Text style={styles.metricDescription}>
+                  💧 Liquidity: {profile.riskProfile.liquidity || 0}
+                </Text>
+                <Text style={styles.metricDescription}>
+                  ⏳ Horizon: {profile.riskProfile.timeHorizon || 0}
+                </Text>
+                <Text style={styles.metricDescription}>
+                  📚 Knowledge: {profile.riskProfile.knowledge || 0}
+                </Text>
+                <Text style={styles.metricDescription}>
+                  🌱 Ethics: {profile.riskProfile.ethics || 0}
+                </Text>
               </View>
 
-              <TouchableOpacity onPress={handleResetRiskProfile} style={styles.resetButton}>
+              <TouchableOpacity
+                onPress={handleResetRiskProfile}
+                style={styles.resetButton}
+              >
                 <Text style={styles.resetButtonText}>Reset Risk Profile</Text>
               </TouchableOpacity>
             </View>
@@ -153,25 +183,37 @@ const handleResetRiskProfile = async () => {
         <Text style={styles.profileEmail}>{user?.email}</Text>
       </View>
 
-      <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('SettingsScreen')}>
+      <TouchableOpacity
+        style={styles.menuItem}
+        onPress={() => navigation.navigate('SettingsScreen')}
+      >
         <Ionicons name="settings" size={24} color="#94a3b8" />
         <Text style={styles.menuText}>Settings</Text>
         <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('SupportScreen')}>
+      <TouchableOpacity
+        style={styles.menuItem}
+        onPress={() => navigation.navigate('SupportScreen')}
+      >
         <Ionicons name="help-circle" size={24} color="#94a3b8" />
         <Text style={styles.menuText}>Help & Support</Text>
         <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('TermsScreen')}>
+      <TouchableOpacity
+        style={styles.menuItem}
+        onPress={() => navigation.navigate('TermsScreen')}
+      >
         <Ionicons name="document-text" size={24} color="#94a3b8" />
         <Text style={styles.menuText}>Terms & Privacy</Text>
         <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
       </TouchableOpacity>
 
-      <TouchableOpacity style={[styles.menuItem, styles.signOutButton]} onPress={handleSignOut}>
+      <TouchableOpacity
+        style={[styles.menuItem, styles.signOutButton]}
+        onPress={handleSignOut}
+      >
         <Ionicons name="log-out" size={24} color="#ef4444" />
         <Text style={[styles.menuText, { color: '#ef4444' }]}>Sign Out</Text>
         <Ionicons name="chevron-forward" size={20} color="#ef4444" />
@@ -180,13 +222,18 @@ const handleResetRiskProfile = async () => {
   );
 
   return (
-    <LinearGradient colors={['#0f172a', '#1e293b', '#334155']} style={styles.container}>
+    <LinearGradient
+      colors={['#0f172a', '#1e293b', '#334155']}
+      style={styles.container}
+    >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>
           {selectedTab === 'investments'
             ? 'Investments'
             : selectedTab === 'swipe'
             ? 'Swipe Stocks'
+            : selectedTab === 'profile'
+            ? 'Your Profile'
             : 'FlexFinance'}
         </Text>
         <TouchableOpacity
@@ -235,6 +282,7 @@ const handleResetRiskProfile = async () => {
     </LinearGradient>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

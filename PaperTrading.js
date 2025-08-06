@@ -8,21 +8,28 @@ import {
   FlatList,
   StyleSheet,
   Alert,
-  Dimensions
+  Dimensions,
 } from 'react-native';
-
-import { PieChart, LineChart } from 'react-native-chart-kit';
+import { VictoryPie, VictoryLine, VictoryChart, VictoryTheme } from 'victory-native';
 import {
-  collection, doc, getDoc, getDocs, deleteDoc,
-  updateDoc, addDoc, setDoc
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  deleteDoc,
+  updateDoc,
+  addDoc,
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 const screenWidth = Dimensions.get('window').width;
 
-// ✅ Whitelisted tickers and mock prices
 const MOCK_TICKERS = {
-  AAPL: 190, TSLA: 270, MSFT: 310, NVDA: 500, AMZN: 140
+  AAPL: 190,
+  TSLA: 270,
+  MSFT: 310,
+  NVDA: 500,
+  AMZN: 140,
 };
 
 export default function PaperTrading() {
@@ -40,16 +47,14 @@ export default function PaperTrading() {
     try {
       const userRef = doc(db, 'users', user.uid);
       const userSnap = await getDoc(userRef);
-
       let currentCash = 100000;
       if (userSnap.exists()) {
         currentCash = userSnap.data().cashBalance || 100000;
       }
-
       setCash(currentCash);
 
       const portfolioSnap = await getDocs(collection(db, 'users', user.uid, 'portfolio'));
-      const data = portfolioSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const data = portfolioSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       setPortfolio(data);
       buildIndustryData(data);
       await buildValueHistory(data, user.uid, currentCash);
@@ -67,20 +72,16 @@ export default function PaperTrading() {
     const industryMap = {};
     let total = 0;
 
-    data.forEach(stock => {
+    data.forEach((stock) => {
       const value = (stock.shares || 0) * (stock.buyPrice || 0);
       const industry = stock.industry || 'Other';
       industryMap[industry] = (industryMap[industry] || 0) + value;
       total += value;
     });
 
-    const colors = ['#60a5fa', '#34d399', '#f87171', '#fbbf24', '#a78bfa', '#f472b6', '#4ade80'];
-    const chartData = Object.entries(industryMap).map(([industry, value], i) => ({
-      name: industry,
-      population: total ? (value / total) * 100 : 0,
-      color: colors[i % colors.length],
-      legendFontColor: '#fff',
-      legendFontSize: 12,
+    const chartData = Object.entries(industryMap).map(([industry, value]) => ({
+      x: industry,
+      y: total ? ((value / total) * 100).toFixed(2) : 0,
     }));
 
     setIndustryData(chartData);
@@ -99,7 +100,7 @@ export default function PaperTrading() {
 
       const historySnap = await getDocs(collection(db, 'users', userId, 'valueHistory'));
       const sortedHistory = historySnap.docs
-        .map(doc => doc.data())
+        .map((doc) => doc.data())
         .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
       setValueHistory(sortedHistory);
@@ -210,52 +211,40 @@ export default function PaperTrading() {
 
       <Text style={styles.chartHeader}>Industry Allocation</Text>
       {industryData.length > 0 && (
-        <PieChart
+        <VictoryPie
           data={industryData}
-          width={screenWidth - 32}
+          colorScale="qualitative"
+          width={screenWidth}
           height={220}
-          chartConfig={chartConfig}
-          accessor="population"
-          backgroundColor="transparent"
-          paddingLeft="16"
-          absolute
+          style={{
+            labels: { fill: 'white', fontSize: 12 },
+          }}
         />
       )}
 
       <Text style={styles.chartHeader}>Portfolio Value Over Time</Text>
       {valueHistory.length > 0 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <LineChart
-            data={{
-              labels: valueHistory.map(entry =>
-                new Date(entry.timestamp).toLocaleDateString()
-              ),
-              datasets: [{ data: valueHistory.map(entry => entry.totalValue) }],
+        <VictoryChart
+          theme={VictoryTheme.material}
+          width={screenWidth}
+          height={240}
+          domainPadding={20}
+        >
+          <VictoryLine
+            interpolation="monotoneX"
+            style={{
+              data: { stroke: '#6366f1' },
             }}
-            width={Math.max(screenWidth, valueHistory.length * 60)}
-            height={220}
-            chartConfig={chartConfig}
-            bezier
-            style={{ borderRadius: 16, marginVertical: 8 }}
+            data={valueHistory.map((entry) => ({
+              x: new Date(entry.timestamp).toLocaleDateString(),
+              y: entry.totalValue,
+            }))}
           />
-        </ScrollView>
+        </VictoryChart>
       )}
     </ScrollView>
   );
 }
-
-const chartConfig = {
-  backgroundGradientFrom: '#1e293b',
-  backgroundGradientTo: '#1e293b',
-  decimalPlaces: 2,
-  color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`,
-  labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-  propsForDots: {
-    r: '4',
-    strokeWidth: '2',
-    stroke: '#6366f1',
-  },
-};
 
 const styles = StyleSheet.create({
   container: { padding: 16, backgroundColor: '#0f172a' },

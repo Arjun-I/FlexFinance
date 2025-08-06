@@ -1,13 +1,8 @@
+// SwipeStocks.js
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Dimensions,
-  Image,
-  Animated,
-  PanResponder,
-  Alert,
+  View, Text, StyleSheet, Dimensions, Image,
+  Animated, PanResponder, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { doc, updateDoc, arrayUnion, setDoc } from 'firebase/firestore';
@@ -17,31 +12,19 @@ const { width } = Dimensions.get('window');
 
 const dummyStocks = [
   {
-    symbol: 'AAPL',
-    name: 'Apple Inc.',
-    price: '$191.83',
-    change: '+1.02%',
-    logo: 'https://logo.clearbit.com/apple.com',
-    description: '',
-    growth: '',
+    symbol: 'AAPL', name: 'Apple Inc.', price: '$191.83',
+    change: '+1.02%', logo: 'https://logo.clearbit.com/apple.com',
+    description: '', growth: '',
   },
   {
-    symbol: 'GOOGL',
-    name: 'Alphabet Inc.',
-    price: '$128.12',
-    change: '-0.54%',
-    logo: 'https://logo.clearbit.com/google.com',
-    description: '',
-    growth: '',
+    symbol: 'GOOGL', name: 'Alphabet Inc.', price: '$128.12',
+    change: '-0.54%', logo: 'https://logo.clearbit.com/google.com',
+    description: '', growth: '',
   },
   {
-    symbol: 'TSLA',
-    name: 'Tesla Inc.',
-    price: '$709.74',
-    change: '+2.03%',
-    logo: 'https://logo.clearbit.com/tesla.com',
-    description: '',
-    growth: '',
+    symbol: 'TSLA', name: 'Tesla Inc.', price: '$709.74',
+    change: '+2.03%', logo: 'https://logo.clearbit.com/tesla.com',
+    description: '', growth: '',
   },
 ];
 
@@ -50,19 +33,14 @@ const addLikedStock = async (stock) => {
   if (!uid) return;
   const ref = doc(db, 'users', uid);
   await setDoc(ref, {}, { merge: true });
-  await updateDoc(ref, {
-    likedStocks: arrayUnion(stock),
-  });
+  await updateDoc(ref, { likedStocks: arrayUnion(stock) });
 };
 
 const rejectStock = async (stock) => {
   const uid = auth.currentUser?.uid;
   if (!uid) return;
   const ref = doc(db, 'users', uid, 'rejected', stock.symbol);
-  await setDoc(ref, {
-    ...stock,
-    rejectedAt: new Date(),
-  });
+  await setDoc(ref, { ...stock, rejectedAt: new Date() });
 };
 
 export default function SwipeStocks() {
@@ -71,27 +49,22 @@ export default function SwipeStocks() {
   const position = useRef(new Animated.ValueXY()).current;
   const [animating, setAnimating] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
-  const [detailsError, setDetailsError] = useState(null);
 
   const fetchStockDetails = async (symbol) => {
     setLoadingDetails(true);
-    setDetailsError(null);
     try {
       const result = await new Promise((resolve) =>
-        setTimeout(
-          () =>
-            resolve({
-              description: `${symbol} is a leading company in its sector.`,
-              growth: '5-year CAGR: 10%',
-            }),
-          1000
-        )
+        setTimeout(() =>
+          resolve({
+            description: `${symbol} is a top performer.`,
+            growth: '5-year CAGR: 10%',
+          }), 1000)
       );
       setStocks((prev) =>
-        prev.map((s) => (s.symbol === symbol ? { ...s, ...result } : s))
+        prev.map((s) => s.symbol === symbol ? { ...s, ...result } : s)
       );
     } catch (err) {
-      setDetailsError('Failed to load details.');
+      Alert.alert('Error loading stock details.');
     } finally {
       setLoadingDetails(false);
     }
@@ -100,11 +73,9 @@ export default function SwipeStocks() {
   useEffect(() => {
     if (index < stocks.length) {
       const current = stocks[index];
-      if (!current.description || !current.growth) {
-        fetchStockDetails(current.symbol);
-      }
+      if (!current.description) fetchStockDetails(current.symbol);
     }
-  }, [index, stocks]);
+  }, [index]);
 
   const handleSwipe = async (dir) => {
     if (animating || index >= stocks.length) return;
@@ -124,6 +95,7 @@ export default function SwipeStocks() {
       setAnimating(false);
     });
   };
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -150,22 +122,16 @@ export default function SwipeStocks() {
           {...panResponder.panHandlers}
           style={[styles.card, { transform: position.getTranslateTransform() }]}
         >
-      <Image source={{ uri: stocks[index].logo }} style={styles.logo} />
+          <Image source={{ uri: stocks[index].logo }} style={styles.logo} />
           <Text style={styles.symbol}>{stocks[index].symbol}</Text>
           <Text style={styles.name}>{stocks[index].name}</Text>
           <Text style={styles.price}>{stocks[index].price}</Text>
-          <Text
-            style={[
-              styles.change,
-              { color: stocks[index].change.startsWith('+') ? '#10b981' : '#ef4444' },
-            ]}
-          >
-            {stocks[index].change}
-          </Text>
+          <Text style={[
+            styles.change,
+            { color: stocks[index].change.startsWith('+') ? '#10b981' : '#ef4444' },
+          ]}>{stocks[index].change}</Text>
           {loadingDetails ? (
             <Text style={styles.loadingText}>Loading details...</Text>
-          ) : detailsError ? (
-            <Text style={styles.errorText}>{detailsError}</Text>
           ) : (
             <>
               <Text style={styles.description}>{stocks[index].description}</Text>
@@ -195,10 +161,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderColor: '#334155',
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
   },
   logo: { width: 64, height: 64, marginBottom: 16 },
   symbol: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
@@ -208,7 +170,6 @@ const styles = StyleSheet.create({
   description: { color: '#cbd5e1', fontSize: 14, textAlign: 'center', marginTop: 12 },
   growth: { color: '#fff', fontSize: 16, fontWeight: '600', marginTop: 8 },
   loadingText: { color: '#cbd5e1', marginTop: 12 },
-  errorText: { color: '#ef4444', marginTop: 12 },
   endText: { color: 'white', fontSize: 16 },
   swipeInfo: {
     flexDirection: 'row',
