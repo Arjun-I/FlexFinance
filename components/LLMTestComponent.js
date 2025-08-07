@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import stockGenerationService from '../services/stockGenerationService';
 import llmService from '../services/llmService';
+import Constants from 'expo-constants';
 
 export default function LLMTestComponent() {
   const [loading, setLoading] = useState(false);
@@ -117,25 +118,25 @@ export default function LLMTestComponent() {
     try {
       // Test OpenAI API
       results.push('🔄 Testing OpenAI API connectivity...');
-      const openaiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-      if (openaiKey && openaiKey !== 'sk-placeholder-key' && openaiKey !== 'sk-your-actual-openai-key-here') {
+      const openaiKey = Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY;
+      if (openaiKey && openaiKey !== 'sk-placeholder-key' && openaiKey !== 'sk-your-actual-openai-key-here' && !openaiKey.includes('placeholder')) {
         results.push('✅ OpenAI API key configured');
       } else {
         results.push('⚠️ OpenAI API key not configured or using placeholder');
       }
 
-      // Test Alpha Vantage API
-      results.push('🔄 Testing Alpha Vantage API connectivity...');
-      const alphaKey = process.env.EXPO_PUBLIC_ALPHA_VANTAGE_KEY;
-      if (alphaKey && alphaKey !== 'placeholder_key' && alphaKey !== 'your-actual-alpha-vantage-key-here') {
-        results.push('✅ Alpha Vantage API key configured');
-      } else {
-        results.push('⚠️ Alpha Vantage API key not configured or using placeholder');
-      }
+          // Test Yahoo Finance API
+    results.push('🔄 Testing Yahoo Finance API connectivity...');
+    const yahooEnabled = Constants.expoConfig?.extra?.EXPO_PUBLIC_YAHOO_FINANCE_ENABLED;
+    if (yahooEnabled === 'true') {
+      results.push('✅ Yahoo Finance API enabled (free, no key required)');
+    } else {
+      results.push('⚠️ Yahoo Finance API not enabled');
+    }
 
       // Test Firebase connectivity
       results.push('🔄 Testing Firebase connectivity...');
-      const firebaseKey = process.env.EXPO_PUBLIC_FIREBASE_API_KEY;
+      const firebaseKey = Constants.expoConfig?.extra?.EXPO_PUBLIC_FIREBASE_API_KEY;
       if (firebaseKey) {
         results.push('✅ Firebase API key configured');
       } else {

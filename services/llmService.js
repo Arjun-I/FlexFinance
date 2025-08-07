@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 
 // Mock LLM API endpoint (replace with actual LLM service)
 const LLM_API_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
-const LLM_API_KEY = Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY || "sk-placeholder-key";
+const LLM_API_KEY = Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY;
 
 class LLMService {
   constructor() {
@@ -107,8 +107,8 @@ Format your response as a JSON array with objects containing:
 
   // Call LLM API (mock implementation)
   async callLLM(prompt) {
-    if (!LLM_API_KEY) {
-      console.warn('⚠️ No LLM API key configured, using mock response');
+    if (!LLM_API_KEY || LLM_API_KEY === "sk-placeholder-key" || LLM_API_KEY.includes("placeholder")) {
+      console.warn('⚠️ No valid LLM API key configured, using mock response');
       return this.getMockRecommendations();
     }
 
@@ -147,11 +147,22 @@ Format your response as a JSON array with objects containing:
   // Parse LLM recommendations
   parseRecommendations(llmResponse, maxRecommendations) {
     try {
-      const recommendations = JSON.parse(llmResponse);
-      return recommendations.slice(0, maxRecommendations);
+      // Handle both string and object responses
+      const responseText = typeof llmResponse === 'string' ? llmResponse : JSON.stringify(llmResponse);
+      const recommendations = JSON.parse(responseText);
+      
+      // Ensure we have an array of recommendations
+      if (Array.isArray(recommendations)) {
+        return recommendations.slice(0, maxRecommendations);
+      } else if (recommendations.recommendations && Array.isArray(recommendations.recommendations)) {
+        return recommendations.recommendations.slice(0, maxRecommendations);
+      } else {
+        console.warn('❌ Unexpected LLM response format:', recommendations);
+        return this.getFallbackRecommendations(maxRecommendations);
+      }
     } catch (error) {
       console.error('❌ Error parsing LLM response:', error);
-      return this.getFallbackRecommendations([], maxRecommendations);
+      return this.getFallbackRecommendations(maxRecommendations);
     }
   }
 

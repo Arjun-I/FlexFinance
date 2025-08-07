@@ -81,7 +81,7 @@ A modern React Native finance app with Firebase authentication, risk assessment,
 - **Expo Linear Gradient** - Beautiful gradient backgrounds
 - **Expo Vector Icons** - Icon library
 - **OpenAI API** - LLM integration for personalized recommendations
-- **Alpha Vantage API** - Real-time stock data and market information
+- **Yahoo Finance API** - Real-time stock data and market information (free, no key required)
 
 ## File Structure
 
@@ -93,7 +93,7 @@ FlexFinance-1/
 ├── RiskQuiz.js               # Risk assessment quiz
 ├── Dashboard.js              # Main dashboard with tabs
 ├── SwipeStocksGenerated.js   # AI-generated stock swiping interface
-├── stockGenerationService.js # Stock generation and Alpha Vantage integration
+├── stockGenerationService.js # Stock generation and Yahoo Finance integration
 ├── llmService.js             # LLM integration service
 ├── ErrorBoundary.js          # Error handling component
 ├── InvestmentsScreen.js      # Portfolio and stock preferences

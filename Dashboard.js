@@ -5,13 +5,11 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Platform,
-  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
-import { auth, db } from '../firebase';
+import { auth, db } from './firebase';
 import {
   doc,
   getDoc,
@@ -24,8 +22,7 @@ import {
 
 import SwipeStocksMock from './SwipeStocksMock';
 import InvestmentsScreen from './InvestmentsScreen';
-import LLMTestComponent from '../components/LLMTestComponent';
-import PortfolioTracker from '../components/PortfolioTracker';
+import LLMTestComponent from './LLMTestComponent';
 
 export default function Dashboard({ navigation }) {
   const [selectedTab, setSelectedTab] = useState('overview');
@@ -33,7 +30,6 @@ export default function Dashboard({ navigation }) {
   const [profile, setProfile] = useState(null);
   const [portfolioValue, setPortfolioValue] = useState(0);
   const [loadingOverview, setLoadingOverview] = useState(true);
-  const isAndroid = Platform.OS === 'android';
 
   const handleSignOut = async () => {
     try {
@@ -139,82 +135,68 @@ export default function Dashboard({ navigation }) {
 
   const renderOverview = () => (
     <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
-      <View style={styles.overviewContainer}>
-        <PortfolioTracker />
-      </View>
+      {loadingOverview ? (
+        <Text style={styles.comingSoon}>Loading overview...</Text>
+      ) : (
+        <>
+          <View style={styles.overviewCard}>
+            <View style={styles.metricRow}>
+              <Ionicons
+                name="wallet"
+                size={24}
+                color="#10b981"
+                style={styles.metricIcon}
+              />
+              <View>
+                <Text style={styles.metricLabel}>Total Portfolio Value</Text>
+                <Text style={styles.metricValue}>
+                  ${portfolioValue.toFixed(2)}
+                </Text>
+              </View>
+            </View>
+          </View>
 
-      {profile?.riskProfile && (
+          <View style={styles.overviewCard}>
+            <View style={styles.metricRow}>
+              <Ionicons
+                name="calendar"
+                size={24}
+                color="#facc15"
+                style={styles.metricIcon}
+              />
+              <View>
+                <Text style={styles.metricLabel}>Last Login</Text>
+                <Text style={styles.metricValue}>
+                  {user?.metadata?.lastSignInTime
+                    ? new Date(
+                        user.metadata.lastSignInTime
+                      ).toLocaleDateString()
+                    : 'N/A'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {profile?.riskProfile && (
             <View style={styles.overviewCard}>
               <Text style={styles.metricLabel}>Your Risk Profile</Text>
-              
-              {profile.riskProfileDetailed ? (
-                <View style={styles.riskDetailedGrid}>
-                  <View style={styles.riskItem}>
-                    <Text style={styles.riskLabel}>Risk Tolerance</Text>
-                    <Text style={[styles.riskValue, { color: profile.riskProfileDetailed.riskTolerance?.color || '#6366f1' }]}>
-                      {profile.riskProfileDetailed.riskTolerance?.level || 'N/A'}
-                    </Text>
-                    <Text style={styles.riskDescription}>
-                      {profile.riskProfileDetailed.riskTolerance?.description || ''}
-                    </Text>
-                  </View>
-
-                  <View style={styles.riskItem}>
-                    <Text style={styles.riskLabel}>Investment Style</Text>
-                    <Text style={styles.riskValue}>
-                      {profile.riskProfileDetailed.investmentStyle || 'N/A'}
-                    </Text>
-                  </View>
-
-                  <View style={styles.riskItem}>
-                    <Text style={styles.riskLabel}>Time Horizon</Text>
-                    <Text style={styles.riskValue}>
-                      {profile.riskProfileDetailed.timeHorizon?.horizon || 'N/A'}
-                    </Text>
-                    <Text style={styles.riskDescription}>
-                      {profile.riskProfileDetailed.timeHorizon?.description || ''}
-                    </Text>
-                  </View>
-
-                  <View style={styles.riskItem}>
-                    <Text style={styles.riskLabel}>Expertise Level</Text>
-                    <Text style={styles.riskValue}>
-                      {profile.riskProfileDetailed.knowledge?.level || 'N/A'}
-                    </Text>
-                    <Text style={styles.riskDescription}>
-                      {profile.riskProfileDetailed.knowledge?.description || ''}
-                    </Text>
-                  </View>
-
-                  <View style={styles.riskItem}>
-                    <Text style={styles.riskLabel}>ESG Focus</Text>
-                    <Text style={styles.riskValue}>
-                      {profile.riskProfileDetailed.ethics?.level || 'N/A'}
-                    </Text>
-                    <Text style={styles.riskDescription}>
-                      {profile.riskProfileDetailed.ethics?.description || ''}
-                    </Text>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.riskGrid}>
-                  <Text style={styles.metricDescription}>
-                    📈 Volatility: {profile.riskProfile.volatility || 0}
-                  </Text>
-                  <Text style={styles.metricDescription}>
-                    💧 Liquidity: {profile.riskProfile.liquidity || 0}
-                  </Text>
-                  <Text style={styles.metricDescription}>
-                    ⏳ Horizon: {profile.riskProfile.timeHorizon || 0}
-                  </Text>
-                  <Text style={styles.metricDescription}>
-                    📚 Knowledge: {profile.riskProfile.knowledge || 0}
-                  </Text>
-                  <Text style={styles.metricDescription}>
-                    🌱 Ethics: {profile.riskProfile.ethics || 0}
-                  </Text>
-                </View>
-              )}
+              <View style={styles.riskGrid}>
+                <Text style={styles.metricDescription}>
+                  📈 Volatility: {profile.riskProfile.volatility || 0}
+                </Text>
+                <Text style={styles.metricDescription}>
+                  💧 Liquidity: {profile.riskProfile.liquidity || 0}
+                </Text>
+                <Text style={styles.metricDescription}>
+                  ⏳ Horizon: {profile.riskProfile.timeHorizon || 0}
+                </Text>
+                <Text style={styles.metricDescription}>
+                  📚 Knowledge: {profile.riskProfile.knowledge || 0}
+                </Text>
+                <Text style={styles.metricDescription}>
+                  🌱 Ethics: {profile.riskProfile.ethics || 0}
+                </Text>
+              </View>
 
               <TouchableOpacity
                 onPress={handleResetRiskProfile}
@@ -224,19 +206,21 @@ export default function Dashboard({ navigation }) {
               </TouchableOpacity>
             </View>
           )}
+        </>
+      )}
     </ScrollView>
   );
 
   const renderSwipe = () => (
-    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+    <View style={styles.tabContent}>
       <SwipeStocksMock />
-    </ScrollView>
+    </View>
   );
 
   const renderInvestments = () => (
-    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+    <View style={styles.tabContent}>
       <InvestmentsScreen />
-    </ScrollView>
+    </View>
   );
 
   const renderProfile = () => (
@@ -288,9 +272,9 @@ export default function Dashboard({ navigation }) {
   );
 
   const renderLLMTest = () => (
-    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+    <View style={styles.tabContent}>
       <LLMTestComponent />
-    </ScrollView>
+    </View>
   );
 
   return (
@@ -321,11 +305,11 @@ export default function Dashboard({ navigation }) {
         {selectedTab === 'swipe' && renderSwipe()}
         {selectedTab === 'investments' && renderInvestments()}
         {selectedTab === 'profile' && renderProfile()}
-        {!isAndroid && selectedTab === 'llmtest' && renderLLMTest()}
+        {selectedTab === 'llmtest' && renderLLMTest()}
       </View>
 
       <View style={styles.tabBar}>
-        {(isAndroid ? ['overview', 'swipe', 'investments', 'profile'] : ['overview', 'swipe', 'investments', 'profile', 'llmtest']).map((tab) => (
+        {['overview', 'swipe', 'investments', 'profile', 'llmtest'].map((tab) => (
           <TouchableOpacity
             key={tab}
             style={[styles.tabButton, selectedTab === tab && styles.activeTab]}
@@ -404,42 +388,11 @@ const styles = StyleSheet.create({
   metricLabel: { color: '#94a3b8', fontSize: 14 },
   metricValue: { color: '#ffffff', fontSize: 20, fontWeight: 'bold', marginTop: 4 },
   metricDescription: { color: '#94a3b8', fontSize: 14, marginTop: 8, width: '48%' },
-  overviewContainer: {
-    flex: 1,
-  },
   riskGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     marginTop: 12,
-  },
-  riskDetailedGrid: {
-    marginTop: 15,
-    gap: 15,
-  },
-  riskItem: {
-    backgroundColor: '#334155',
-    padding: 12,
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: '#6366f1',
-  },
-  riskLabel: {
-    fontSize: 12,
-    color: '#94a3b8',
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  riskValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#f1f5f9',
-    marginBottom: 4,
-  },
-  riskDescription: {
-    fontSize: 12,
-    color: '#64748b',
-    lineHeight: 16,
   },
   resetButton: {
     marginTop: 20,

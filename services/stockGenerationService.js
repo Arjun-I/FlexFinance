@@ -4,9 +4,8 @@ import { db, auth } from '../firebase';
 import llmService from './llmService';
 import Constants from 'expo-constants';
 
-// Alpha Vantage API configuration
-const ALPHA_VANTAGE_API_KEY = Constants.expoConfig?.extra?.EXPO_PUBLIC_ALPHA_VANTAGE_KEY || "placeholder_key";
-const ALPHA_VANTAGE_BASE_URL = 'https://www.alphavantage.co/query';
+// Yahoo Finance API configuration (no API key needed)
+const YAHOO_FINANCE_BASE_URL = 'https://query1.finance.yahoo.com/v8/finance';
 
 // Rate limiting configuration
 const RATE_LIMIT = {
@@ -27,7 +26,7 @@ class StockGenerationService {
     this.lastGenerationDate = null;
   }
 
-  // Check rate limits for Alpha Vantage API
+  // Check rate limits for Yahoo Finance API
   checkRateLimit() {
     const now = new Date();
     const today = now.toDateString();
@@ -60,55 +59,61 @@ class StockGenerationService {
     RATE_LIMIT.dailyRequestCount++;
   }
 
-  // Fetch stock data from Alpha Vantage with rate limiting
+  // Fetch stock data from Yahoo Finance with rate limiting
   async fetchStockData(symbol) {
-    if (!ALPHA_VANTAGE_API_KEY) {
-      throw new Error('Alpha Vantage API key not configured');
-    }
-
     this.checkRateLimit();
 
     try {
-      const overviewUrl = `${ALPHA_VANTAGE_BASE_URL}?function=OVERVIEW&symbol=${encodeURIComponent(symbol)}&apikey=${ALPHA_VANTAGE_API_KEY}`;
-      const quoteUrl = `${ALPHA_VANTAGE_BASE_URL}?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${ALPHA_VANTAGE_API_KEY}`;
+      const chartUrl = `${YAHOO_FINANCE_BASE_URL}/chart/${symbol.toUpperCase()}?interval=1d&range=1d`;
+      const summaryUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol.toUpperCase()}?modules=summaryDetail,financialData`;
 
-      const [overviewRes, quoteRes] = await Promise.all([
-        fetch(overviewUrl),
-        fetch(quoteUrl)
+      const [chartRes, summaryRes] = await Promise.all([
+        fetch(chartUrl),
+        fetch(summaryUrl)
       ]);
 
       this.updateRateLimit();
 
-      if (!overviewRes.ok || !quoteRes.ok) {
+      if (!chartRes.ok || !summaryRes.ok) {
         throw new Error('Failed to fetch stock data');
       }
 
-      const overview = await overviewRes.json();
-      const quoteJson = await quoteRes.json();
-      const quote = quoteJson['Global Quote'] || {};
+      const chartData = await chartRes.json();
+      const summaryData = await summaryRes.json();
 
-      // Check for API error messages
-      if (overview['Error Message'] || quoteJson['Error Message']) {
-        throw new Error('API error: ' + (overview['Error Message'] || quoteJson['Error Message']));
+      if (!chartData.chart.result || chartData.chart.result.length === 0) {
+        throw new Error(`No data found for symbol: ${symbol}`);
       }
 
+      const result = chartData.chart.result[0];
+      const quote = result.indicators.quote[0];
+      const timestamp = result.timestamp[result.timestamp.length - 1];
+      const close = quote.close[quote.close.length - 1];
+      const open = quote.open[quote.open.length - 1];
+      const change = close - open;
+      const changePercent = (change / open) * 100;
+
+      const summary = summaryData.quoteSummary?.result?.[0];
+      const summaryDetail = summary?.summaryDetail;
+      const financialData = summary?.financialData;
+
       return {
-        symbol: overview.Symbol || symbol,
-        name: overview.Name || symbol,
-        price: quote['05. price'] ? `$${parseFloat(quote['05. price']).toFixed(2)}` : 'N/A',
-        change: quote['10. change percent'] || 'N/A',
-        marketCap: overview.MarketCapitalization || 'N/A',
-        peRatio: overview.PERatio || 'N/A',
-        dividendYield: overview.DividendYield || 'N/A',
-        sector: overview.Sector || 'Technology',
-        industry: overview.Industry || 'Software',
-        description: overview.Description || '',
-        website: overview.Website || '',
-        logo: overview.Website ? `https://logo.clearbit.com/${overview.Website.replace(/^https?:\/\//, '')}` : null,
-        growth: overview.FiveYearAverageReturn ? `5-year Avg Return: ${overview.FiveYearAverageReturn}%` : '',
+        symbol: symbol.toUpperCase(),
+        name: symbol.toUpperCase(),
+        price: `$${close.toFixed(2)}`,
+        change: `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`,
+        marketCap: summaryDetail?.marketCap ? `${(summaryDetail.marketCap / 1e9).toFixed(2)}B` : 'N/A',
+        peRatio: financialData?.forwardPE ? financialData.forwardPE.toFixed(2) : 'N/A',
+        dividendYield: summaryDetail?.dividendYield ? `${(summaryDetail.dividendYield * 100).toFixed(2)}%` : 'N/A',
+        sector: 'Technology', // Default sector
+        industry: 'Software', // Default industry
+        description: 'Stock data from Yahoo Finance',
+        website: '',
+        logo: null,
+        growth: '',
         riskMetrics: {
-          beta: overview.Beta || 'N/A',
-          volatility: quote['10. change percent'] ? Math.abs(parseFloat(quote['10. change percent'])) : 0
+          beta: 'N/A',
+          volatility: Math.abs(changePercent)
         }
       };
     } catch (error) {

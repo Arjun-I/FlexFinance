@@ -9,9 +9,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { auth } from '../firebase';
+import { auth, db } from '../firebase';
 import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
 import stockGenerationService from '../services/stockGenerationService';
 import riskProfileService from '../services/riskProfileService';
 

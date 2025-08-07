@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 
 const extra = Constants.expoConfig?.extra || Constants.manifest?.extra;
-const API_KEY = extra?.EXPO_PUBLIC_ALPHA_VANTAGE_KEY;
+const YAHOO_ENABLED = extra?.EXPO_PUBLIC_YAHOO_FINANCE_ENABLED === 'true';
 
 /**
  * Fetch detailed stock information for a given symbol.
@@ -157,8 +157,8 @@ export async function getStockDetails(symbol) {
     }
   };
 
-  // If API key is not available, use mock data
-  if (!API_KEY) {
+  // If Yahoo Finance is not enabled, use mock data
+  if (!YAHOO_ENABLED) {
     const mockStock = mockStocks[symbol.toUpperCase()];
     if (mockStock) {
       return mockStock;
@@ -176,37 +176,43 @@ export async function getStockDetails(symbol) {
     }
   }
 
-  // Use real API if key is available
+  // Use Yahoo Finance API if enabled
   try {
-    const overviewUrl = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${encodeURIComponent(symbol)}&apikey=${API_KEY}`;
-    const quoteUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${API_KEY}`;
+    const quoteUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`;
+    const summaryUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=summaryDetail,financialData`;
 
-    const [overviewRes, quoteRes] = await Promise.all([
-      fetch(overviewUrl),
+    const [summaryRes, quoteRes] = await Promise.all([
+      fetch(summaryUrl),
       fetch(quoteUrl)
     ]);
 
-    if (!overviewRes.ok || !quoteRes.ok) {
+    if (!summaryRes.ok || !quoteRes.ok) {
       throw new Error('Network response was not ok');
     }
 
-    const overview = await overviewRes.json();
+    const summary = await summaryRes.json();
     const quoteJson = await quoteRes.json();
-    const quote = quoteJson['Global Quote'] || {};
+    
+    const quoteData = quoteJson.chart?.result?.[0] || {};
+    const meta = quoteData.meta || {};
+    const indicators = quoteData.indicators?.quote?.[0] || {};
+    
+    const summaryDetail = summary.quoteSummary?.result?.[0]?.summaryDetail || {};
+    const financialData = summary.quoteSummary?.result?.[0]?.financialData || {};
 
-    const price = quote['05. price'] ? `$${parseFloat(quote['05. price']).toFixed(2)}` : 'N/A';
-    const change = quote['10. change percent'] || 'N/A';
-    const website = overview.Website ? overview.Website.replace(/^https?:\/\//, '') : '';
-    const logo = website ? `https://logo.clearbit.com/${website}` : undefined;
-    const growth = overview.FiveYearAverageReturn ? `5-year Avg Return: ${overview.FiveYearAverageReturn}%` : '';
+    const price = meta.regularMarketPrice ? `$${meta.regularMarketPrice.toFixed(2)}` : 'N/A';
+    const change = meta.regularMarketChangePercent ? `${meta.regularMarketChangePercent >= 0 ? '+' : ''}${meta.regularMarketChangePercent.toFixed(2)}%` : 'N/A';
+    const website = summaryDetail.website || '';
+    const logo = website ? `https://logo.clearbit.com/${website.replace(/^https?:\/\//, '')}` : undefined;
+    const growth = financialData.revenueGrowth ? `5-year Avg Return: ${(financialData.revenueGrowth * 100).toFixed(1)}%` : '';
 
     return {
-      symbol: overview.Symbol || symbol,
-      name: overview.Name || symbol,
+      symbol: meta.symbol || symbol,
+      name: meta.shortName || symbol,
       price,
       change,
       logo,
-      description: overview.Description || '',
+      description: summaryDetail.longBusinessSummary || '',
       growth,
     };
   } catch (error) {

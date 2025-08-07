@@ -13,6 +13,15 @@ import {
 import { Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  VictoryPie,
+  VictoryChart,
+  VictoryLine,
+  VictoryAxis,
+  VictoryTheme,
+  VictoryTooltip,
+  VictoryLabel,
+} from 'victory-native';
+import {
   collection,
   doc,
   getDoc,
@@ -23,10 +32,11 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import yahooFinanceService from '../services/yahooFinanceService';
 
 const screenWidth = Dimensions.get('window').width;
 
-// Expanded mock ticker list with realistic prices
+// Fallback mock ticker list with realistic prices
 const MOCK_TICKERS = {
   AAPL: 190, TSLA: 270, MSFT: 310, NVDA: 500, AMZN: 140,
   GOOGL: 2800, META: 350, NFLX: 450, AMD: 120, INTC: 45,
@@ -162,9 +172,20 @@ export default function PaperTrading() {
     }
   };
 
-  const fetchMockPrice = async (ticker) => {
-    const upperTicker = ticker.toUpperCase();
-    return MOCK_TICKERS[upperTicker] || 100;
+  const fetchStockPrice = async (ticker) => {
+    const user = auth.currentUser;
+    const userId = user?.uid || 'anonymous';
+    
+    try {
+      // Try to get real price from Yahoo Finance with smart rate limiting
+      const quote = await yahooFinanceService.getStockQuote(ticker.toUpperCase(), userId, portfolio.length);
+      return quote.price;
+    } catch (error) {
+      console.log(`Using mock price for ${ticker}: ${error.message}`);
+      // Fallback to mock price
+      const upperTicker = ticker.toUpperCase();
+      return MOCK_TICKERS[upperTicker] || 100;
+    }
   };
 
   const buyStock = async () => {
@@ -182,7 +203,7 @@ export default function PaperTrading() {
     try {
       const upperTicker = ticker.toUpperCase();
       const shareCount = parseInt(shares);
-      const price = await fetchMockPrice(upperTicker);
+      const price = await fetchStockPrice(upperTicker);
       const totalCost = shareCount * price;
 
       if (totalCost > cash) {
@@ -246,7 +267,7 @@ export default function PaperTrading() {
 
     try {
       const shareDiff = newShares - stock.shares;
-      const price = await fetchMockPrice(stock.symbol);
+      const price = await fetchStockPrice(stock.symbol);
       const costDiff = shareDiff * price;
 
       if (shareDiff > 0 && costDiff > cash) {
@@ -293,7 +314,7 @@ export default function PaperTrading() {
     }
 
     try {
-      const price = await fetchMockPrice(stock.symbol);
+      const price = await fetchStockPrice(stock.symbol);
       const totalValue = stock.shares * price;
       const profit = totalValue - stock.totalCost;
 
@@ -382,6 +403,14 @@ export default function PaperTrading() {
 
   useEffect(() => {
     fetchPortfolio();
+    
+    // Refresh portfolio data every 5 minutes
+    const interval = setInterval(() => {
+      console.log('🔄 Refreshing portfolio data...');
+      fetchPortfolio();
+    }, 5 * 60 * 1000);
+    
+    return () => clearInterval(interval);
   }, [fetchPortfolio]);
 
   if (loading) {
@@ -453,17 +482,34 @@ export default function PaperTrading() {
         )}
       </View>
 
-      {/* Web-optimized data displays */}
+      {/* Charts */}
       {industryData.length > 0 && (
         <View style={styles.chartSection}>
           <Text style={styles.sectionTitle}>Portfolio by Industry</Text>
-          <View style={styles.fallbackContainer}>
-            {industryData.map((item, index) => (
-              <View key={index} style={styles.fallbackItem}>
-                <Text style={styles.fallbackLabel}>{item.x}</Text>
-                <Text style={styles.fallbackValue}>{item.y.toFixed(1)}%</Text>
-              </View>
-            ))}
+          <View style={styles.chartContainer}>
+            <VictoryPie
+              data={industryData}
+              colorScale="qualitative"
+              width={300}
+              height={300}
+              theme={VictoryTheme.material}
+              style={{
+                labels: {
+                  fill: '#ffffff',
+                  fontSize: 12,
+                  fontWeight: 'bold',
+                },
+              }}
+              labelComponent={
+                <VictoryTooltip
+                  style={{ fill: '#ffffff' }}
+                  flyoutStyle={{
+                    stroke: '#1e293b',
+                    fill: '#1e293b',
+                  }}
+                />
+              }
+            />
           </View>
         </View>
       )}
@@ -471,17 +517,44 @@ export default function PaperTrading() {
       {valueHistory.length > 0 && (
         <View style={styles.chartSection}>
           <Text style={styles.sectionTitle}>Portfolio Value History</Text>
-          <View style={styles.fallbackContainer}>
-            {valueHistory.slice(-5).map((item, index) => (
-              <View key={index} style={styles.fallbackItem}>
-                <Text style={styles.fallbackLabel}>
-                  {new Date(item.timestamp).toLocaleDateString()}
-                </Text>
-                <Text style={styles.fallbackValue}>
-                  ${item.totalValue?.toFixed(2) || '0.00'}
-                </Text>
-              </View>
-            ))}
+          <View style={styles.chartContainer}>
+            <VictoryChart
+              width={350}
+              height={250}
+              theme={VictoryTheme.material}
+              style={{
+                background: { fill: '#1e293b' },
+              }}
+            >
+              <VictoryAxis
+                dependentAxis
+                style={{
+                  axis: { stroke: '#64748b' },
+                  grid: { stroke: '#334155' },
+                  tickLabels: { fill: '#e2e8f0', fontSize: 10 },
+                }}
+                tickFormat={(t) => `$${(t / 1000).toFixed(0)}k`}
+              />
+              <VictoryAxis
+                style={{
+                  axis: { stroke: '#64748b' },
+                  tickLabels: { fill: '#e2e8f0', fontSize: 10 },
+                }}
+                tickFormat={(t) => new Date(t).toLocaleDateString()}
+              />
+              <VictoryLine
+                data={valueHistory}
+                x="timestamp"
+                y="totalValue"
+                style={{
+                  data: { stroke: '#10b981', strokeWidth: 3 },
+                }}
+                animate={{
+                  duration: 1000,
+                  onLoad: { duration: 500 },
+                }}
+              />
+            </VictoryChart>
           </View>
         </View>
       )}
@@ -662,6 +735,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 20,
     alignItems: 'center',
+  },
+  chartContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
   },
   fallbackContainer: {
     width: '100%',

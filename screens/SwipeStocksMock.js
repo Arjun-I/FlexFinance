@@ -7,6 +7,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { doc, updateDoc, arrayUnion, setDoc, getDoc, getDocs, collection, deleteDoc, addDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import stockGenerationService from '../services/stockGenerationService';
 
 const { width } = Dimensions.get('window');
 
@@ -142,15 +143,33 @@ export default function SwipeStocksMock() {
       const rejectedData = rejectedSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setRejectedStocks(rejectedData);
 
+      // Get generated stocks from the service
+      let generatedStocks = [];
+      try {
+        generatedStocks = await stockGenerationService.generateDailyStocks();
+        console.log('✅ Generated stocks with LLM summaries:', generatedStocks.length);
+      } catch (error) {
+        console.error('❌ Error generating stocks, using fallback:', error);
+        // Fallback to mock stocks if generation fails
+        generatedStocks = MOCK_STOCKS.map(stock => ({
+          ...stock,
+          analysis: 'Mock analysis - LLM generation failed',
+          suitability: stock.riskLevel,
+          risks: ['Mock risk data'],
+          benefits: ['Mock benefit data'],
+          recommendation: 'hold'
+        }));
+      }
+
       // Filter out already swiped stocks to prevent duplicates
       const swipedSymbols = [...userLikedStocks, ...rejectedData.map(s => s.symbol)];
-      const availableStocks = MOCK_STOCKS.filter(stock => !swipedSymbols.includes(stock.symbol));
+      const availableStocks = generatedStocks.filter(stock => !swipedSymbols.includes(stock.symbol));
       setStocks(availableStocks);
       
       // Reset current index when stocks change
       setCurrentIndex(0);
       
-      console.log(`Loaded ${availableStocks.length} available stocks out of ${MOCK_STOCKS.length} total`);
+      console.log(`Loaded ${availableStocks.length} available stocks with LLM summaries`);
     } catch (error) {
       console.error('Error loading stocks:', error);
       // Fallback to all stocks if there's an error
@@ -383,6 +402,15 @@ export default function SwipeStocksMock() {
     }
   };
 
+  const getRecommendationColor = (recommendation) => {
+    switch (recommendation) {
+      case 'buy': return '#10b981';
+      case 'hold': return '#f59e0b';
+      case 'sell': return '#ef4444';
+      default: return '#6b7280';
+    }
+  };
+
   const renderStockCard = () => {
     if (currentIndex >= stocks.length) {
       return (
@@ -448,6 +476,37 @@ export default function SwipeStocksMock() {
         </View>
 
         <Text style={styles.reason}>{stock.reason}</Text>
+
+        {/* LLM Analysis Section */}
+        {stock.analysis && (
+          <View style={styles.analysisSection}>
+            <Text style={styles.analysisTitle}>AI Analysis</Text>
+            <Text style={styles.analysisText}>{stock.analysis}</Text>
+            
+            {stock.risks && stock.risks.length > 0 && (
+              <View style={styles.analysisRow}>
+                <Text style={styles.analysisLabel}>Risks:</Text>
+                <Text style={styles.analysisValue}>{stock.risks.join(', ')}</Text>
+              </View>
+            )}
+            
+            {stock.benefits && stock.benefits.length > 0 && (
+              <View style={styles.analysisRow}>
+                <Text style={styles.analysisLabel}>Benefits:</Text>
+                <Text style={styles.analysisValue}>{stock.benefits.join(', ')}</Text>
+              </View>
+            )}
+            
+            {stock.recommendation && (
+              <View style={styles.analysisRow}>
+                <Text style={styles.analysisLabel}>Recommendation:</Text>
+                <Text style={[styles.analysisValue, { color: getRecommendationColor(stock.recommendation) }]}>
+                  {stock.recommendation.toUpperCase()}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         <View style={styles.swipeButtons}>
           <TouchableOpacity
@@ -787,6 +846,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#94a3b8',
     textAlign: 'center',
+  },
+  analysisSection: {
+    backgroundColor: '#334155',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  analysisTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginBottom: 8,
+  },
+  analysisText: {
+    fontSize: 14,
+    color: '#e2e8f0',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  analysisRow: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  analysisLabel: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: 'bold',
+    width: 80,
+  },
+  analysisValue: {
+    fontSize: 12,
+    color: '#e2e8f0',
+    flex: 1,
   },
   refreshButton: {
     flexDirection: 'row',
