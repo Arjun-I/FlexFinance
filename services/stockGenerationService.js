@@ -2,11 +2,10 @@
 import { doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, deleteDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import llmService from './llmService';
+import { getSecureRecommendations, getSecureStockAnalysis } from './secureLLMService';
 import smartRateLimiter from './smartRateLimiter';
 import Constants from 'expo-constants';
-
-// Yahoo Finance API configuration (no API key needed)
-const YAHOO_FINANCE_BASE_URL = 'https://query1.finance.yahoo.com/v8/finance';
+import { getStockQuote, getCompanyProfile } from './finnhubService';
 
 // Cache configuration
 const CACHE_CONFIG = {
@@ -98,289 +97,57 @@ class StockGenerationService {
       totalEntries: stockCache.size,
       priceValid,
       marketCapValid,
-      expired,
-      maxSize: CACHE_CONFIG.maxCacheSize
+      expired
     };
   }
 
   // Force refresh cache for a specific symbol
   async forceRefreshCache(symbol) {
-    stockCache.delete(symbol.toUpperCase());
-    return await this.fetchStockData(symbol);
+    stockCache.delete(symbol);
+    console.log(`🔄 Cache refreshed for ${symbol}`);
   }
 
   // Check network connectivity
   async checkNetworkConnectivity() {
     try {
-      const response = await fetch('https://www.google.com', { 
-        method: 'HEAD',
-        timeout: 5000 
-      });
+      const response = await fetch('https://httpbin.org/status/200', { method: 'HEAD' });
       return response.ok;
     } catch (error) {
-      console.warn('⚠️ Network connectivity check failed:', error.message);
+      console.warn('Network connectivity check failed:', error);
       return false;
     }
   }
 
-  // Fetch stock data with smart caching
-  async fetchStockData(symbol) {
-    const symbolUpper = symbol.toUpperCase();
-    
-    // Check cache first
-    const cached = this.getCachedStockData(symbolUpper);
-    if (cached && this.isCacheValid(symbolUpper, 'price')) {
-      console.log(`📦 Using cached data for ${symbolUpper}`);
-      return cached;
-    }
-
-    // Check network connectivity
-    const isConnected = await this.checkNetworkConnectivity();
-    if (!isConnected) {
-      console.warn('⚠️ No network connectivity detected');
-      if (cached) {
-        return cached;
-      }
-      return this.createFallbackStockData(symbolUpper);
-    }
-
-    // Check if we need to update market cap
-    const needsMarketCapUpdate = !cached || !this.isCacheValid(symbolUpper, 'marketCap');
-    
-    try {
-      await smartRateLimiter.checkRateLimit('anonymous', 0);
-    } catch (error) {
-      console.warn(`⚠️ Rate limit exceeded for ${symbolUpper}, using cached data if available`);
-      if (cached) {
-        return cached;
-      }
-      throw new Error(`Rate limit exceeded and no cached data available for ${symbolUpper}`);
-    }
-
-    try {
-      console.log(`🔄 Fetching ${needsMarketCapUpdate ? 'full' : 'price-only'} data for ${symbolUpper} from Yahoo Finance...`);
-      
-      // Always fetch price data
-      const chartUrl = `${YAHOO_FINANCE_BASE_URL}/chart/${symbolUpper}?interval=1d&range=1d`;
-      console.log(`📡 Fetching from: ${chartUrl}`);
-      
-      const chartRes = await fetch(chartUrl, { 
-        timeout: 20000, // Increased timeout
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          'Accept': 'application/json',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Cache-Control': 'no-cache'
-        }
-      });
-      
-      console.log(`📡 Yahoo Finance response status: ${chartRes.status}`);
-      
-      if (!chartRes.ok) {
-        throw new Error(`Yahoo Finance API error: ${chartRes.status} - ${chartRes.statusText}`);
-      }
-
-      const chartData = await chartRes.json();
-      console.log(`📄 Yahoo Finance response received for ${symbolUpper}`);
-      
-      if (!chartData.chart || !chartData.chart.result || chartData.chart.result.length === 0) {
-        throw new Error(`No price data found for symbol: ${symbolUpper}`);
-      }
-
-      const result = chartData.chart.result[0];
-      const quote = result.indicators.quote[0];
-      
-      if (!quote || !quote.close || quote.close.length === 0) {
-        throw new Error(`No quote data available for ${symbolUpper}`);
-      }
-      
-      const timestamp = result.timestamp[result.timestamp.length - 1];
-      const close = quote.close[quote.close.length - 1];
-      const open = quote.open[quote.open.length - 1];
-      
-      if (!close || !open) {
-        throw new Error(`Invalid price data for ${symbolUpper}`);
-      }
-      
-      const change = close - open;
-      const changePercent = (change / open) * 100;
-
-      console.log(`💰 Price data for ${symbolUpper}: Close=$${close}, Change=${changePercent.toFixed(2)}%`);
-
-      let stockData = {
-        symbol: symbolUpper,
-        name: symbolUpper,
-        price: `$${close.toFixed(2)}`,
-        change: `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`,
-        sector: cached?.sector || 'Technology',
-        industry: cached?.industry || 'Software',
-        description: cached?.description || 'Stock data from Yahoo Finance',
-        website: cached?.website || '',
-        logo: null,
-        growth: '',
-        riskLevel: 'medium', // Ensure riskLevel is always present
-        confidence: 0.7, // Ensure confidence is always present
-        reason: 'Real-time stock data', // Ensure reason is always present
-        riskMetrics: {
-          beta: cached?.riskMetrics?.beta || 'N/A',
-          volatility: Math.abs(changePercent)
-        }
-      };
-
-      // Always fetch detailed data (market cap, etc.) for fresh data
-      try {
-        const summaryUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbolUpper}?modules=summaryDetail,financialData,assetProfile`;
-        console.log(`📡 Fetching detailed data from: ${summaryUrl}`);
-        
-        const summaryRes = await fetch(summaryUrl, { 
-          timeout: 20000, // Increased timeout
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'application/json',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Cache-Control': 'no-cache'
-          }
-        });
-        
-        console.log(`📡 Detailed data response status: ${summaryRes.status}`);
-        
-        if (summaryRes.ok) {
-          const summaryData = await summaryRes.json();
-          console.log(`📄 Detailed data response received for ${symbolUpper}`);
-          
-          const summary = summaryData.quoteSummary?.result?.[0];
-          const summaryDetail = summary?.summaryDetail;
-          const financialData = summary?.financialData;
-          const assetProfile = summary?.assetProfile;
-
-          stockData = {
-            ...stockData,
-            marketCap: summaryDetail?.marketCap ? `${(summaryDetail.marketCap / 1e9).toFixed(2)}B` : 'N/A',
-            peRatio: financialData?.forwardPE ? financialData.forwardPE.toFixed(2) : 'N/A',
-            dividendYield: summaryDetail?.dividendYield ? `${(summaryDetail.dividendYield * 100).toFixed(2)}%` : 'N/A',
-            sector: assetProfile?.sector || stockData.sector,
-            industry: assetProfile?.industry || stockData.industry,
-            description: assetProfile?.longBusinessSummary || stockData.description,
-            website: assetProfile?.website || stockData.website,
-          };
-          
-          console.log(`📊 Detailed data for ${symbolUpper}: Market Cap=${stockData.marketCap}, PE=${stockData.peRatio}, Dividend=${stockData.dividendYield}`);
-        } else {
-          console.warn(`⚠️ Detailed data request failed for ${symbolUpper}: ${summaryRes.status}`);
-          // Use cached detailed data if available
-          if (cached) {
-            stockData = {
-              ...stockData,
-              marketCap: cached.marketCap,
-              peRatio: cached.peRatio,
-              dividendYield: cached.dividendYield,
-              sector: cached.sector,
-              industry: cached.industry,
-              description: cached.description,
-              website: cached.website,
-            };
-          }
-        }
-      } catch (error) {
-        console.warn(`⚠️ Could not fetch detailed data for ${symbolUpper}:`, error.message);
-        // Use cached detailed data if available
-        if (cached) {
-          stockData = {
-            ...stockData,
-            marketCap: cached.marketCap,
-            peRatio: cached.peRatio,
-            dividendYield: cached.dividendYield,
-            sector: cached.sector,
-            industry: cached.industry,
-            description: cached.description,
-            website: cached.website,
-          };
-        }
-      }
-
-      smartRateLimiter.updateRateLimit('anonymous', 0);
-      this.cacheStockData(symbolUpper, stockData);
-      
-      console.log(`✅ Successfully fetched real-time data for ${symbolUpper}`);
-      return stockData;
-    } catch (error) {
-      console.error(`❌ Error fetching data for ${symbolUpper}:`, error.message);
-      
-      // Return cached data if available, otherwise create fallback data
-      if (cached) {
-        console.log(`📦 Returning cached data for ${symbolUpper} due to API error`);
-        return cached;
-      }
-      
-      // Create fallback data with mock prices for common stocks
-      console.log(`🔄 Creating fallback data for ${symbolUpper} due to API failure`);
-      const fallbackData = this.createFallbackStockData(symbolUpper);
-      this.cacheStockData(symbolUpper, fallbackData);
-      return fallbackData;
-    }
-  }
-
-  // Create fallback stock data when API fails
-  createFallbackStockData(symbol) {
-    const mockPrices = {
-      'AAPL': { price: 190.50, change: 2.3, sector: 'Technology', industry: 'Consumer Electronics' },
-      'MSFT': { price: 310.25, change: 1.8, sector: 'Technology', industry: 'Software' },
-      'GOOGL': { price: 2800.00, change: 3.1, sector: 'Technology', industry: 'Internet Services' },
-      'AMZN': { price: 140.75, change: 1.5, sector: 'Consumer', industry: 'E-commerce' },
-      'TSLA': { price: 270.30, change: 4.2, sector: 'Consumer', industry: 'Automotive' },
-      'NVDA': { price: 500.00, change: 5.8, sector: 'Technology', industry: 'Semiconductors' },
-      'META': { price: 350.40, change: 2.7, sector: 'Technology', industry: 'Social Media' },
-      'NFLX': { price: 450.20, change: 1.9, sector: 'Consumer', industry: 'Entertainment' },
-      'JNJ': { price: 165.80, change: 0.8, sector: 'Healthcare', industry: 'Pharmaceuticals' },
-      'PG': { price: 145.20, change: 0.5, sector: 'Consumer', industry: 'Consumer Staples' }
-    };
-
-    const stockData = mockPrices[symbol] || { price: 100.00, change: 0.0, sector: 'Technology', industry: 'Software' };
-    
-    return {
-      symbol: symbol.toUpperCase(),
-      name: symbol.toUpperCase(),
-      price: `$${stockData.price.toFixed(2)}`,
-      change: `${stockData.change >= 0 ? '+' : ''}${stockData.change.toFixed(2)}%`,
-      marketCap: 'N/A',
-      peRatio: 'N/A',
-      dividendYield: 'N/A',
-      sector: stockData.sector,
-      industry: stockData.industry,
-      description: 'Fallback stock data (API unavailable)',
-      website: '',
-      logo: null,
-      growth: '',
-      riskLevel: 'medium',
-      confidence: 0.7,
-      reason: 'Fallback stock recommendation',
-      riskMetrics: {
-        beta: 'N/A',
-        volatility: Math.abs(stockData.change)
-      }
-    };
-  }
-
-  // Load user context for personalized recommendations
+  // Load user context for stock generation
   async loadUserContext() {
     try {
-      const uid = auth.currentUser?.uid;
-      if (!uid) throw new Error('User not authenticated');
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
 
-      const userDoc = await getDoc(doc(db, 'users', uid));
+      // Get user preferences
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
       const userData = userDoc.data();
       
-      this.riskProfile = userData?.riskProfile || {};
       this.userPreferences = {
         likedStocks: userData?.likedStocks || [],
-        rejectedStocks: [],
+        rejectedStocks: userData?.rejectedStocks || [],
         portfolio: userData?.portfolio || [],
-        cashBalance: userData?.cashBalance || 100000,
+        cashBalance: userData?.cashBalance || 100000
       };
 
-      // Load rejected stocks
-      const rejectedSnap = await getDocs(collection(db, 'users', uid, 'rejected'));
-      this.userPreferences.rejectedStocks = rejectedSnap.docs.map(doc => doc.data());
+      // Get risk profile
+      const riskDoc = await getDoc(doc(db, 'users', user.uid, 'preferences', 'quiz'));
+      const riskData = riskDoc.data();
+      
+      this.riskProfile = riskData?.riskProfile || {
+        volatility: 10,
+        timeHorizon: 3,
+        knowledge: 2,
+        ethics: 3,
+        liquidity: 2
+      };
 
       console.log('✅ User context loaded for stock generation');
       return true;
@@ -390,21 +157,55 @@ class StockGenerationService {
     }
   }
 
-  // Generate personalized stock recommendations using LLM
+  // Generate personalized stock recommendations using LLM ONLY - NO MOCK DATA
   async generatePersonalizedStocks(maxStocks = 10) {
     try {
+      console.log('🔄 Starting LLM-only stock generation...');
+      
       if (!this.riskProfile || !this.userPreferences) {
+        console.log('📊 Loading user context...');
         await this.loadUserContext();
       }
 
-      console.log('🔄 Generating personalized stock recommendations with LLM...');
+      console.log('📊 User context loaded:', {
+        riskProfile: this.riskProfile ? 'loaded' : 'missing',
+        userPreferences: this.userPreferences ? 'loaded' : 'missing',
+        likedStocks: this.userPreferences?.likedStocks?.length || 0,
+        rejectedStocks: this.userPreferences?.rejectedStocks?.length || 0
+      });
       
-      // Get LLM recommendations for stock selection
-      const recommendations = await llmService.getRecommendations(maxStocks * 2); // Get more to filter
+      // Get LLM recommendations for stock selection (try secure first, fallback to direct, then fallback recommendations)
+      let recommendations;
+      try {
+        console.log('🤖 Trying secure LLM recommendations...');
+        const userContext = {
+          riskProfile: this.riskProfile,
+          userPreferences: this.userPreferences
+        };
+        recommendations = await getSecureRecommendations(userContext, maxStocks * 3);
+        console.log('✅ Secure LLM recommendations received');
+      } catch (error) {
+        console.warn('⚠️ Secure LLM failed, falling back to direct API:', error.message);
+        try {
+          console.log('🤖 Trying direct LLM recommendations...');
+          recommendations = await llmService.getRecommendations(maxStocks * 3);
+          console.log('✅ Direct LLM recommendations received');
+        } catch (llmError) {
+          console.error('❌ Both secure and direct LLM failed, using fallback recommendations:', llmError.message);
+          console.log('🔄 Using fallback stock recommendations...');
+          recommendations = llmService.getFallbackRecommendations(maxStocks * 3);
+          console.log('✅ Fallback recommendations loaded');
+        }
+      }
       
       if (!recommendations || recommendations.length === 0) {
-        throw new Error('No recommendations received from LLM service');
+        console.error('❌ No recommendations received from LLM service');
+        console.log('🔄 Using fallback recommendations as last resort...');
+        recommendations = llmService.getFallbackRecommendations(maxStocks * 3);
+        console.log('✅ Fallback recommendations loaded as last resort');
       }
+      
+      console.log(`🎯 LLM generated ${recommendations.length} recommendations:`, recommendations.map(r => r.symbol));
       
       // Filter out already liked/rejected stocks
       const likedSymbols = this.userPreferences.likedStocks.map(s => s.symbol);
@@ -412,88 +213,99 @@ class StockGenerationService {
       
       const availableStocks = recommendations
         .filter(rec => !likedSymbols.includes(rec.symbol) && !rejectedSymbols.includes(rec.symbol))
-        .slice(0, maxStocks);
+        .slice(0, maxStocks * 2); // Get more candidates since we'll filter by real data
 
-      console.log(`🎯 Generated ${availableStocks.length} personalized stock recommendations with LLM analysis`);
+      console.log(`📊 ${availableStocks.length} stocks available after filtering:`, availableStocks.map(s => s.symbol));
       
-      // Enhance each stock with additional data
-      const enhancedStocks = await Promise.all(
-        availableStocks.map(async (stock) => {
-          try {
-            // Try to get real-time data for each stock
-            const realTimeData = await this.fetchStockData(stock.symbol);
-            return {
-              ...stock,
-              ...realTimeData,
-              // Preserve LLM analysis
-              analysis: stock.analysis || stock.reason,
-              investmentThesis: stock.reason,
-              keyRisks: stock.keyRisks || ['Market volatility', 'Sector-specific risks'],
-              keyBenefits: stock.keyBenefits || ['Growth potential', 'Strong fundamentals'],
-              targetPrice: stock.targetPrice || realTimeData.price,
-              dividendYield: stock.dividendYield || realTimeData.dividendYield,
-              recommendation: stock.recommendation || 'buy',
-              generatedAt: new Date(),
-              source: 'LLM + Real-time Data'
-            };
-          } catch (error) {
-            console.warn(`⚠️ Could not fetch real-time data for ${stock.symbol}, using LLM data only`);
-            return {
-              ...stock,
-              price: stock.targetPrice || '$0.00',
-              change: '+0.00%',
-              analysis: stock.analysis || stock.reason,
-              investmentThesis: stock.reason,
-              keyRisks: stock.keyRisks || ['Market volatility', 'Sector-specific risks'],
-              keyBenefits: stock.keyBenefits || ['Growth potential', 'Strong fundamentals'],
-              targetPrice: stock.targetPrice || '$0.00',
-              dividendYield: stock.dividendYield || 'N/A',
-              recommendation: stock.recommendation || 'buy',
-              generatedAt: new Date(),
-              source: 'LLM Analysis Only'
-            };
+      // Get real-time data for each LLM recommendation
+      const stocksWithRealData = [];
+      
+      for (const stock of availableStocks) {
+        try {
+          console.log(`🔄 Fetching real-time data for ${stock.symbol}...`);
+          
+          // Get real-time quote data
+          console.log(`📈 Getting quote for ${stock.symbol}...`);
+          const quoteData = await getStockQuote(stock.symbol);
+          console.log(`✅ Quote received for ${stock.symbol}: $${quoteData.price}`);
+          
+          if (!quoteData || !quoteData.price) {
+            console.warn(`⚠️ No real price data for ${stock.symbol}, skipping`);
+            continue;
           }
-        })
-      );
+          
+          // Get company profile data
+          console.log(`🏢 Getting profile for ${stock.symbol}...`);
+          const companyData = await getCompanyProfile(stock.symbol);
+          console.log(`✅ Profile received for ${stock.symbol}: ${companyData.name}`);
+          
+          if (!companyData || !companyData.name) {
+            console.warn(`⚠️ No real company data for ${stock.symbol}, skipping`);
+            continue;
+          }
+          
+          // Create stock object with LLM analysis + real data
+          const enhancedStock = {
+            // LLM-generated data
+            symbol: stock.symbol,
+            analysis: stock.analysis || stock.reason,
+            investmentThesis: stock.reason,
+            riskLevel: stock.riskLevel || 'medium',
+            confidence: stock.confidence || 0.7,
+            marketCap: stock.marketCap || 'large',
+            growthPotential: stock.growthPotential || 'medium',
+            keyRisks: stock.keyRisks || ['Market volatility', 'Sector-specific risks'],
+            keyBenefits: stock.keyBenefits || ['Growth potential', 'Strong fundamentals'],
+            recommendation: stock.recommendation || 'buy',
+            
+            // Real-time data from Finnhub
+            name: companyData.name,
+            price: quoteData.price,
+            priceFormatted: `$${quoteData.price.toFixed(2)}`,
+            change: quoteData.change,
+            changePercent: quoteData.changePercent,
+            sector: companyData.sector,
+            industry: companyData.industry,
+            description: companyData.description,
+            marketCap: companyData.marketCap,
+            peRatio: companyData.peRatio,
+            dividendYield: companyData.dividendYield,
+            website: companyData.website,
+            logo: companyData.logo,
+            
+            // Metadata
+            generatedAt: new Date(),
+            source: 'LLM + Real-time Data',
+            timestamp: new Date().toISOString(),
+            lastUpdated: new Date().toISOString()
+          };
+          
+          stocksWithRealData.push(enhancedStock);
+          console.log(`✅ ${stock.symbol}: $${quoteData.price} - ${stock.reason?.substring(0, 50)}...`);
+          
+          // Stop when we have enough stocks
+          if (stocksWithRealData.length >= maxStocks) {
+            console.log(`🎯 Reached target of ${maxStocks} stocks`);
+            break;
+          }
+          
+        } catch (error) {
+          console.error(`❌ Failed to get real data for ${stock.symbol}:`, error.message);
+          continue; // Skip this stock and try the next one
+        }
+      }
+      
+      if (stocksWithRealData.length === 0) {
+        throw new Error('No stocks with real-time data available. Please check your Finnhub API key.');
+      }
 
-      return enhancedStocks;
+      console.log(`✅ Successfully generated ${stocksWithRealData.length} stocks with LLM analysis and real-time data`);
+      return stocksWithRealData;
+      
     } catch (error) {
       console.error('❌ Error generating personalized stocks:', error);
       throw error; // Don't fall back to mock data, let the error propagate
     }
-  }
-
-  // Fetch detailed data for recommended stocks
-  async fetchStockDetails(recommendedStocks) {
-    const stockDetails = [];
-    const errors = [];
-
-    for (const stock of recommendedStocks) {
-      try {
-        const symbol = typeof stock === 'string' ? stock : stock.symbol;
-        const data = await this.fetchStockData(symbol);
-        
-        stockDetails.push({
-          ...data,
-          recommendation: typeof stock === 'object' ? stock : null,
-          generatedAt: new Date(),
-          source: 'AI Generated'
-        });
-
-        // Add delay to respect rate limits
-        await new Promise(resolve => setTimeout(resolve, 200));
-      } catch (error) {
-        console.error(`Failed to fetch data for ${stock}:`, error);
-        errors.push({ symbol: stock, error: error.message });
-      }
-    }
-
-    console.log(`✅ Fetched details for ${stockDetails.length} stocks`);
-    if (errors.length > 0) {
-      console.warn(`⚠️ Failed to fetch ${errors.length} stocks:`, errors);
-    }
-
-    return stockDetails;
   }
 
   // Generate and store daily stock recommendations
@@ -517,7 +329,7 @@ class StockGenerationService {
         }
       }
 
-      console.log('🔄 Generating new daily stock recommendations with smart caching...');
+      console.log('🔄 Generating new daily stock recommendations...');
 
       // Generate personalized recommendations
       const recommendedStocks = await this.generatePersonalizedStocks(10);
@@ -526,56 +338,15 @@ class StockGenerationService {
         throw new Error('No personalized stocks generated');
       }
       
-      // Fetch detailed data for each stock with smart caching
-      const stockDetails = await this.fetchStockDetailsWithCache(recommendedStocks);
-
       // Store generated stocks in Firestore
-      await this.storeGeneratedStocks(stockDetails);
+      await this.storeGeneratedStocks(recommendedStocks);
 
-      console.log(`✅ Generated and stored ${stockDetails.length} new stock recommendations with smart caching`);
-      return stockDetails;
+      console.log(`✅ Generated and stored ${recommendedStocks.length} new stock recommendations`);
+      return recommendedStocks;
     } catch (error) {
       console.error('❌ Error generating daily stocks:', error);
       throw error; // Don't fall back to mock data, let the error propagate
     }
-  }
-
-  // Fetch detailed data for recommended stocks with smart caching
-  async fetchStockDetailsWithCache(recommendedStocks) {
-    const stockDetails = [];
-    const errors = [];
-    const cacheStats = this.getCacheStats();
-
-    console.log(`📊 Cache stats before fetching: ${JSON.stringify(cacheStats)}`);
-
-    for (const stock of recommendedStocks) {
-      try {
-        const symbol = typeof stock === 'string' ? stock : stock.symbol;
-        const data = await this.fetchStockData(symbol);
-        
-        stockDetails.push({
-          ...data,
-          recommendation: typeof stock === 'object' ? stock : null,
-          generatedAt: new Date(),
-          source: 'LLM + Smart Cached Data'
-        });
-
-        // Add delay to respect rate limits
-        await new Promise(resolve => setTimeout(resolve, 200));
-      } catch (error) {
-        console.error(`Failed to fetch data for ${stock}:`, error);
-        errors.push({ symbol: stock, error: error.message });
-      }
-    }
-
-    const finalCacheStats = this.getCacheStats();
-    console.log(`📊 Cache stats after fetching: ${JSON.stringify(finalCacheStats)}`);
-    console.log(`✅ Fetched details for ${stockDetails.length} stocks with smart caching`);
-    if (errors.length > 0) {
-      console.warn(`⚠️ Failed to fetch ${errors.length} stocks:`, errors);
-    }
-
-    return stockDetails;
   }
 
   // Store generated stocks in Firestore
@@ -592,14 +363,13 @@ class StockGenerationService {
       const deletePromises = oldStocksSnap.docs.map(docSnapshot => deleteDoc(docSnapshot.ref));
       await Promise.all(deletePromises);
 
-      // Add new generated stocks
-      const addPromises = stocks.map(stock => {
-        const stockRef = doc(collection(db, 'users', uid, 'generatedStocks'));
-        return setDoc(stockRef, stock);
-      });
-      await Promise.all(addPromises);
+      // Store new stocks
+      const storePromises = stocks.map(stock => 
+        setDoc(doc(db, 'users', uid, 'generatedStocks', stock.symbol), stock)
+      );
+      await Promise.all(storePromises);
 
-      console.log('✅ Generated stocks stored in Firestore');
+      console.log(`✅ Stored ${stocks.length} generated stocks in Firestore`);
     } catch (error) {
       console.error('❌ Error storing generated stocks:', error);
       throw error;
@@ -610,41 +380,46 @@ class StockGenerationService {
   async getGeneratedStocks() {
     try {
       const uid = auth.currentUser?.uid;
-      if (!uid) return [];
+      if (!uid) throw new Error('User not authenticated');
 
       const stocksRef = collection(db, 'users', uid, 'generatedStocks');
-      const stocksSnap = await getDocs(query(stocksRef, orderBy('generatedAt', 'desc')));
+      const stocksSnap = await getDocs(stocksRef);
       
-      return stocksSnap.docs.map(doc => ({
+      const stocks = stocksSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+
+      return stocks.sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
     } catch (error) {
-      console.error('❌ Error fetching generated stocks:', error);
+      console.error('❌ Error getting generated stocks:', error);
       return [];
     }
   }
 
-  // Helper methods for risk profile interpretation
+  // Get risk level description
   getRiskLevel(volatility) {
-    if (volatility <= 8) return 'low';
-    if (volatility <= 12) return 'medium';
-    return 'high';
+    if (volatility <= 8) return 'Conservative';
+    if (volatility <= 12) return 'Moderate';
+    return 'Aggressive';
   }
 
-  // Get stock analysis from LLM
+  // Get stock analysis using LLM
   async getStockAnalysis(symbol) {
     try {
-      return await llmService.getStockAnalysis(symbol);
+      const userContext = {
+        riskProfile: this.riskProfile,
+        userPreferences: this.userPreferences
+      };
+      return await getSecureStockAnalysis(symbol, userContext);
     } catch (error) {
       console.error('❌ Error getting stock analysis:', error);
-      return {
-        analysis: 'Unable to generate analysis at this time',
-        suitability: 'unknown',
-        risks: ['Analysis unavailable'],
-        benefits: ['Analysis unavailable'],
-        recommendation: 'hold'
-      };
+      try {
+        return await llmService.getStockAnalysis(symbol);
+      } catch (fallbackError) {
+        console.error('❌ Fallback analysis also failed:', fallbackError);
+        throw new Error('Unable to generate stock analysis');
+      }
     }
   }
 }

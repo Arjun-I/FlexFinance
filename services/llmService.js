@@ -8,6 +8,17 @@ import Constants from 'expo-constants';
 const LLM_API_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 const LLM_API_KEY = Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY || process.env.EXPO_PUBLIC_OPENAI_API_KEY;
 
+// Debug API key loading
+console.log('🔑 LLM API Key Debug:', {
+  hasKey: !!LLM_API_KEY,
+  keyLength: LLM_API_KEY ? LLM_API_KEY.length : 0,
+  keyStart: LLM_API_KEY ? LLM_API_KEY.substring(0, 10) + '...' : 'none',
+  fromExtra: !!Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY,
+  fromEnv: !!process.env.EXPO_PUBLIC_OPENAI_API_KEY,
+  extraKeys: Object.keys(Constants.expoConfig?.extra || {}),
+  envKeys: Object.keys(process.env).filter(k => k.includes('OPENAI'))
+});
+
 class LLMService {
   constructor() {
     this.userPreferences = null;
@@ -26,11 +37,22 @@ class LLMService {
       const userDoc = await getDoc(doc(db, 'users', uid));
       const userData = userDoc.data();
       
-      this.riskProfile = userData?.riskProfile || {};
       this.userPreferences = {
         likedStocks: userData?.likedStocks || [],
         portfolio: userData?.portfolio || [],
         cashBalance: userData?.cashBalance || 100000,
+      };
+
+      // Load risk profile from the correct location
+      const riskDoc = await getDoc(doc(db, 'users', uid, 'preferences', 'quiz'));
+      const riskData = riskDoc.data();
+      
+      this.riskProfile = riskData?.riskProfile || {
+        volatility: 10,
+        timeHorizon: 3,
+        knowledge: 2,
+        ethics: 3,
+        liquidity: 2
       };
 
       // Load rejected stocks
@@ -38,6 +60,7 @@ class LLMService {
       this.rejectedStocks = rejectedSnap.docs.map(doc => doc.data());
 
       console.log('✅ User context loaded for LLM');
+      console.log('📊 Risk profile loaded:', this.riskProfile);
       return true;
     } catch (error) {
       console.error('❌ Error loading user context:', error);
@@ -48,16 +71,31 @@ class LLMService {
   // Generate personalized stock recommendations
   async getRecommendations(maxRecommendations = 10) {
     try {
+      console.log('🤖 LLM Service: Starting recommendations...');
+      
       if (!this.riskProfile || !this.userPreferences) {
+        console.log('🤖 LLM Service: Loading user context...');
         await this.loadUserContext();
       }
 
+      console.log('🤖 LLM Service: Building prompt...');
       const prompt = this.buildRecommendationPrompt(maxRecommendations);
-      const recommendations = await this.callLLM(prompt);
+      console.log('🤖 LLM Service: Prompt length:', prompt.length, 'characters');
+      console.log('🤖 LLM Service: Prompt preview:', prompt.substring(0, 500) + '...');
       
-      return this.parseRecommendations(recommendations, maxRecommendations);
+      console.log('🤖 LLM Service: Calling LLM...');
+      const recommendations = await this.callLLM(prompt);
+      console.log('🤖 LLM Service: Raw LLM response received, length:', recommendations?.length || 0);
+      console.log('🤖 LLM Service: Raw response preview:', recommendations?.substring(0, 200) + '...');
+      
+      console.log('🤖 LLM Service: Parsing recommendations...');
+      const parsed = this.parseRecommendations(recommendations, maxRecommendations);
+      console.log('🤖 LLM Service: Parsed recommendations:', parsed.length);
+      
+      return parsed;
     } catch (error) {
-      console.error('❌ Error getting recommendations:', error);
+      console.error('❌ LLM Service Error getting recommendations:', error);
+      console.log('🤖 LLM Service: Using fallback recommendations...');
       return this.getFallbackRecommendations(maxRecommendations);
     }
   }
@@ -68,6 +106,10 @@ class LLMService {
     const likedStocks = this.userPreferences.likedStocks;
     const rejectedStocks = this.rejectedStocks;
     const portfolio = this.userPreferences.portfolio;
+
+    console.log('📊 Building prompt with risk profile:', riskProfile);
+    console.log('📊 Risk tolerance:', this.getRiskLevel(riskProfile.volatility));
+    console.log('📊 Investment horizon:', this.getTimeHorizon(riskProfile.timeHorizon));
 
     return `
 You are an expert financial advisor providing personalized stock recommendations for investment purposes.
@@ -128,9 +170,20 @@ Focus on providing investment-grade analysis that would help an investor make in
   async callLLM(prompt) {
     const apiKey = LLM_API_KEY;
     
+    console.log('🔑 LLM API Key Status:', {
+      hasKey: !!apiKey,
+      keyLength: apiKey ? apiKey.length : 0,
+      keyStart: apiKey ? apiKey.substring(0, 10) + '...' : 'none',
+      isPlaceholder: apiKey === "sk-placeholder-key" || apiKey === "your_openai_api_key_here"
+    });
+    
     // Check if API key is properly configured
     if (!apiKey || apiKey === "sk-placeholder-key" || apiKey.includes("placeholder") || apiKey === "your_openai_api_key_here") {
       console.error('❌ No valid LLM API key configured');
+      console.log('💡 To fix this:');
+      console.log('1. Get a free API key from https://platform.openai.com/api-keys');
+      console.log('2. Add EXPO_PUBLIC_OPENAI_API_KEY=your_key_here to your .env file');
+      console.log('3. Restart the app');
       throw new Error('OpenAI API key not configured. Please set a valid API key.');
     }
 
@@ -188,31 +241,97 @@ Focus on providing investment-grade analysis that would help an investor make in
     }
   }
 
-  // Parse LLM recommendations
+  // Parse LLM recommendations with robust error handling
   parseRecommendations(llmResponse, maxRecommendations) {
     try {
+      console.log('🔄 Parsing LLM response...');
+      console.log('📝 Raw response type:', typeof llmResponse);
+      console.log('📝 Raw response length:', llmResponse?.length || 0);
+      console.log('📝 Raw response preview:', llmResponse?.substring(0, 200) + '...');
+      
       // Handle both string and object responses
       const responseText = typeof llmResponse === 'string' ? llmResponse : JSON.stringify(llmResponse);
-      const recommendations = JSON.parse(responseText);
+      
+      // Clean the response text to extract JSON
+      let cleanedText = responseText.trim();
+      
+      // Try to extract JSON from markdown code blocks
+      const jsonMatch = cleanedText.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        cleanedText = jsonMatch[1];
+      }
+      
+      // Try to extract JSON from code blocks without language specifier
+      const codeMatch = cleanedText.match(/```\s*([\s\S]*?)\s*```/);
+      if (codeMatch && !jsonMatch) {
+        cleanedText = codeMatch[1];
+      }
+      
+      // Find JSON array or object in the text
+      const jsonArrayMatch = cleanedText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (jsonArrayMatch) {
+        cleanedText = jsonArrayMatch[0];
+      }
+      
+      // Try to parse the cleaned text
+      let recommendations;
+      try {
+        recommendations = JSON.parse(cleanedText);
+      } catch (parseError) {
+        // If direct parsing fails, try to find and extract JSON objects
+        const jsonObjects = [];
+        const objectRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
+        const matches = cleanedText.match(objectRegex);
+        
+        if (matches) {
+          for (const match of matches) {
+            try {
+              const obj = JSON.parse(match);
+              if (obj.symbol && obj.name) {
+                jsonObjects.push(obj);
+              }
+            } catch (e) {
+              // Skip invalid objects
+            }
+          }
+        }
+        
+        if (jsonObjects.length > 0) {
+          recommendations = jsonObjects;
+        } else {
+          throw parseError;
+        }
+      }
       
       // Ensure we have an array of recommendations
       if (Array.isArray(recommendations)) {
+        console.log('✅ Parsed array of recommendations:', recommendations.length);
         return recommendations.slice(0, maxRecommendations);
       } else if (recommendations.recommendations && Array.isArray(recommendations.recommendations)) {
+        console.log('✅ Parsed recommendations from object:', recommendations.recommendations.length);
         return recommendations.recommendations.slice(0, maxRecommendations);
+      } else if (recommendations && typeof recommendations === 'object') {
+        // Single recommendation object
+        console.log('✅ Parsed single recommendation object');
+        return [recommendations].slice(0, maxRecommendations);
       } else {
         console.error('❌ Unexpected LLM response format:', recommendations);
         throw new Error('Invalid response format from LLM');
       }
     } catch (error) {
       console.error('❌ Error parsing LLM response:', error);
-      throw new Error(`Failed to parse LLM response: ${error.message}`);
+      console.error('❌ Raw response:', llmResponse);
+      console.log('🔄 Returning empty array due to parsing error');
+      return []; // Return empty array instead of throwing error
     }
   }
 
   // Fallback recommendations based on risk profile - only used if LLM completely fails
   getFallbackRecommendations(maxRecommendations) {
+    console.log('🔄 Using fallback recommendations...');
+    console.log('📊 Risk profile for fallback:', this.riskProfile);
     const riskLevel = this.getRiskLevel(this.riskProfile?.volatility);
+    console.log('📊 Risk level for fallback:', riskLevel);
     
     const recommendations = {
       low: [
@@ -254,13 +373,18 @@ Focus on providing investment-grade analysis that would help an investor make in
     };
 
     const suitableStocks = recommendations[riskLevel] || recommendations.medium;
-    return suitableStocks.slice(0, maxRecommendations).map(stock => ({
+    const result = suitableStocks.slice(0, maxRecommendations).map(stock => ({
       ...stock,
       riskLevel: stock.riskLevel || 'medium',
       confidence: stock.confidence || 0.7,
       marketCap: 'large',
       growthPotential: riskLevel === 'high' ? 'high' : riskLevel === 'medium' ? 'medium' : 'low'
     }));
+    
+    console.log('✅ Fallback recommendations generated:', result.length, 'stocks');
+    console.log('📊 Sample stocks:', result.slice(0, 3).map(s => s.symbol));
+    
+    return result;
   }
 
   // Helper methods for risk profile interpretation

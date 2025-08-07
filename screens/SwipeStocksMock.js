@@ -525,8 +525,11 @@ export default function SwipeStocksMock() {
     const safeStock = {
       symbol: typeof stock.symbol === 'string' ? stock.symbol : 'N/A',
       name: typeof stock.name === 'string' ? stock.name : (typeof stock.symbol === 'string' ? stock.symbol : 'Unknown Stock'),
-      price: typeof stock.price === 'string' ? stock.price : '$0.00',
-      change: typeof stock.change === 'string' ? stock.change : '+0.00%',
+      price: typeof stock.price === 'number' ? stock.price : 0,
+      priceFormatted: typeof stock.priceFormatted === 'string' ? stock.priceFormatted : 
+                     (typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : '$0.00'),
+      change: typeof stock.change === 'number' ? stock.change : 0,
+      changePercent: typeof stock.changePercent === 'string' ? stock.changePercent : '+0.00%',
       sector: typeof stock.sector === 'string' ? stock.sector : 'Technology',
       industry: typeof stock.industry === 'string' ? stock.industry : 'Software',
       reason: typeof stock.reason === 'string' ? stock.reason : 'No analysis available',
@@ -535,7 +538,8 @@ export default function SwipeStocksMock() {
       analysis: typeof stock.analysis === 'string' ? stock.analysis : (typeof stock.reason === 'string' ? stock.reason : 'No analysis available'),
       keyBenefits: Array.isArray(stock.keyBenefits) ? stock.keyBenefits : ['Growth potential', 'Strong fundamentals'],
       keyRisks: Array.isArray(stock.keyRisks) ? stock.keyRisks : ['Market volatility', 'Sector-specific risks'],
-      targetPrice: typeof stock.targetPrice === 'string' ? stock.targetPrice : (typeof stock.price === 'string' ? stock.price : '$0.00'),
+      targetPrice: typeof stock.targetPrice === 'string' ? stock.targetPrice : 
+                   (typeof stock.price === 'number' ? `$${stock.price.toFixed(2)}` : '$0.00'),
       dividendYield: typeof stock.dividendYield === 'string' ? stock.dividendYield : 'N/A',
       marketCap: typeof stock.marketCap === 'string' ? stock.marketCap : 'N/A',
       growthPotential: typeof stock.growthPotential === 'string' ? stock.growthPotential : 'Medium',
@@ -574,9 +578,9 @@ export default function SwipeStocksMock() {
             <Text style={styles.name}>{safeStock.name}</Text>
           </View>
           <View style={styles.priceInfo}>
-            <Text style={styles.price}>{safeStock.price}</Text>
-            <Text style={[styles.change, { color: safeStock.change.startsWith('+') ? '#10b981' : '#ef4444' }]}>
-              {safeStock.change}
+            <Text style={styles.price}>{safeStock.priceFormatted}</Text>
+            <Text style={[styles.change, { color: safeStock.changePercent.startsWith('+') ? '#10b981' : '#ef4444' }]}>
+              {safeStock.changePercent}
             </Text>
           </View>
         </View>

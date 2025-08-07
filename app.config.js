@@ -61,7 +61,12 @@ export default {
       EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
       EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
       EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
-      EXPO_PUBLIC_YAHOO_FINANCE_ENABLED: process.env.EXPO_PUBLIC_YAHOO_FINANCE_ENABLED || 'true',
+      EXPO_PUBLIC_FINNHUB_API_KEY: process.env.EXPO_PUBLIC_FINNHUB_API_KEY,
+      EXPO_PUBLIC_YAHOO_FINANCE_ENABLED: process.env.EXPO_PUBLIC_YAHOO_FINANCE_ENABLED || 'false',
+      // New secure backend configuration
+      EXPO_PUBLIC_PROXY_ENABLED: process.env.EXPO_PUBLIC_PROXY_ENABLED || 'false',
+      EXPO_PUBLIC_PROXY_URL: process.env.EXPO_PUBLIC_PROXY_URL || 'https://your-proxy-server.com/api',
+      EXPO_PUBLIC_SECURE_LLM_ENDPOINT: process.env.EXPO_PUBLIC_SECURE_LLM_ENDPOINT || 'https://your-secure-backend.com/api/llm',
       eas: {
         projectId: "1f7a1663-5908-4d6f-a3c1-03a0611900af"
       }

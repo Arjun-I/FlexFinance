@@ -32,7 +32,7 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import yahooFinanceService from '../services/yahooFinanceService';
+import { getStockQuote, getCompanyProfile, getMultipleQuotes } from '../services/finnhubService';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -131,7 +131,7 @@ export default function PaperTrading() {
       if (data.length > 0) {
         const symbols = data.map(stock => stock.symbol);
         try {
-          const quotes = await yahooFinanceService.getMultipleQuotes(symbols, userId, data.length);
+          const { quotes } = await getMultipleQuotes(symbols, userId, data.length);
           
           data.forEach(stock => {
             const quote = quotes.find(q => q.symbol === stock.symbol);
@@ -169,7 +169,7 @@ export default function PaperTrading() {
   const fetchStockPrice = async (ticker) => {
     try {
       const upperTicker = ticker.toUpperCase();
-      const quote = await yahooFinanceService.getStockQuote(upperTicker, auth.currentUser?.uid, portfolio.length);
+      const quote = await getStockQuote(upperTicker, auth.currentUser?.uid, portfolio.length);
       return quote.price;
     } catch (error) {
       console.error('Error fetching stock price:', error);
@@ -201,7 +201,7 @@ export default function PaperTrading() {
       setLoading(true);
 
       // Fetch real stock data including sector and industry
-      const stockOverview = await yahooFinanceService.getStockOverview(upperTicker, user.uid, portfolio.length);
+      const stockOverview = await getCompanyProfile(upperTicker);
       const price = await fetchStockPrice(upperTicker);
       
       const totalCost = sharesNum * price;

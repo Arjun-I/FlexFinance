@@ -223,13 +223,19 @@ export default function LLMTestComponent() {
       results.push(`🔄 Testing Yahoo Finance API: ${yahooTestUrl}`);
       
       try {
-        const yahooResponse = await fetch(yahooTestUrl, {
-          timeout: 10000,
+        // Create platform-safe fetch options
+        const fetchOptions = {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'application/json'
           }
-        });
+        };
+
+        // Only add User-Agent for non-web platforms
+        if (typeof window === 'undefined' || !window.document) {
+          fetchOptions.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+        }
+
+        const yahooResponse = await fetch(yahooTestUrl, fetchOptions);
         
         results.push(`📡 Yahoo Finance response status: ${yahooResponse.status}`);
         

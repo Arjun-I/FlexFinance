@@ -10,7 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { collection, getDocs, getDoc, doc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import yahooFinanceService from '../services/yahooFinanceService';
+import { getPortfolioValue } from '../services/finnhubService';
 
 export default function PortfolioTracker() {
   const [portfolioValue, setPortfolioValue] = useState(0);
@@ -53,10 +53,18 @@ export default function PortfolioTracker() {
 
       // Get real-time prices for all holdings with error handling
       try {
-        const portfolioUpdate = await yahooFinanceService.getPortfolioValue(holdingsData, user.uid);
+        const portfolioUpdate = await getPortfolioValue(holdingsData, user.uid);
         
         setPortfolioValue(portfolioUpdate.totalValue + cash);
-        setHoldings(portfolioUpdate.holdings);
+        // Update holdings with proper price formatting
+        const updatedHoldings = portfolioUpdate.holdings.map(holding => ({
+          ...holding,
+          currentPrice: typeof holding.currentPrice === 'number' ? holding.currentPrice : holding.averagePrice || 0,
+          currentValue: holding.shares * (typeof holding.currentPrice === 'number' ? holding.currentPrice : holding.averagePrice || 0),
+          priceFormatted: typeof holding.currentPrice === 'number' ? `$${holding.currentPrice.toFixed(2)}` : 
+                         (holding.averagePrice ? `$${holding.averagePrice.toFixed(2)}` : '$0.00')
+        }));
+        setHoldings(updatedHoldings);
         setErrors(portfolioUpdate.errors);
         setLastUpdated(new Date());
       } catch (priceError) {
@@ -101,7 +109,27 @@ export default function PortfolioTracker() {
   };
 
   const formatPercentage = (value) => {
-    return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+    // Handle both string and number inputs
+    if (typeof value === 'string') {
+      // If it's already a formatted string, return as is
+      if (value.includes('%')) {
+        return value;
+      }
+      // Try to parse the string as a number
+      const numValue = parseFloat(value);
+      if (isNaN(numValue)) {
+        return '0.00%';
+      }
+      return `${numValue >= 0 ? '+' : ''}${numValue.toFixed(2)}%`;
+    }
+    
+    // Handle number inputs
+    if (typeof value === 'number') {
+      return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+    }
+    
+    // Fallback for other types
+    return '0.00%';
   };
 
   const getChangeColor = (change) => {
@@ -164,7 +192,7 @@ export default function PortfolioTracker() {
               <View style={styles.holdingDetails}>
                 <View style={styles.priceInfo}>
                   <Text style={styles.currentPrice}>
-                    {formatCurrency(holding.currentPrice)}
+                    {holding.priceFormatted || formatCurrency(holding.currentPrice)}
                   </Text>
                   <Text style={[
                     styles.changePercent,

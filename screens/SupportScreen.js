@@ -22,7 +22,7 @@ export default function SupportScreen({ navigation }) {
   };
 
   const handlePrivacyPolicy = () => {
-    navigation.navigate('Terms');
+    navigation.navigate('TermsScreen');
   };
 
   return (

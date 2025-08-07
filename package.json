@@ -4,10 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
-    "setup": "node ./scripts/setup-env.js",
-    "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
-    "android-debug": "node ./scripts/debug-android.js",
     "web": "expo start --web",
     "lint": "expo lint",
     "doctor": "expo doctor",

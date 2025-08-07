@@ -111,7 +111,15 @@ export default function App() {
         >
           <Stack.Screen name="TestScreen" component={SimpleTestScreen} />
           <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="RiskQuiz" component={RiskQuiz} />
+          <Stack.Screen 
+            name="RiskQuiz" 
+            component={({ navigation }) => (
+              <RiskQuiz 
+                navigation={navigation} 
+                setHasCompletedQuiz={setHasCompletedQuiz}
+              />
+            )}
+          />
           <Stack.Screen name="Dashboard" component={Dashboard} />
           <Stack.Screen name="SettingsScreen" component={SettingsScreen} />
           <Stack.Screen name="SupportScreen" component={SupportScreen} />

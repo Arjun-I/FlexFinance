@@ -25,6 +25,8 @@ import {
 import SwipeStocksMock from './SwipeStocksMock';
 import InvestmentsScreen from './InvestmentsScreen';
 import LLMTestComponent from '../components/LLMTestComponent';
+import DataDebugComponent from '../components/DataDebugComponent';
+import StockGenerationTest from '../components/StockGenerationTest';
 
 export default function Dashboard({ navigation }) {
   const [selectedTab, setSelectedTab] = useState('overview');
@@ -152,6 +154,10 @@ export default function Dashboard({ navigation }) {
           <Text style={styles.welcomeSubtitle}>
             Your personal finance companion
           </Text>
+          <View style={styles.dataStatusContainer}>
+            <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+            <Text style={styles.dataStatusText}>Real-time data enabled</Text>
+          </View>
         </View>
 
         {/* Portfolio Summary */}
@@ -356,6 +362,18 @@ export default function Dashboard({ navigation }) {
     </ScrollView>
   );
 
+  const renderDataDebug = () => (
+    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+      <DataDebugComponent />
+    </ScrollView>
+  );
+
+  const renderStockGenerationTest = () => (
+    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+      <StockGenerationTest />
+    </ScrollView>
+  );
+
   return (
     <LinearGradient
       colors={['#0f172a', '#1e293b', '#334155']}
@@ -385,10 +403,12 @@ export default function Dashboard({ navigation }) {
         {selectedTab === 'investments' && renderInvestments()}
         {selectedTab === 'profile' && renderProfile()}
         {Platform.OS !== 'android' && selectedTab === 'llmtest' && renderLLMTest()}
+        {selectedTab === 'datadebug' && renderDataDebug()}
+        {selectedTab === 'stocktest' && renderStockGenerationTest()}
       </View>
 
       <View style={styles.tabBar}>
-        {(Platform.OS === 'android' ? ['overview', 'swipe', 'investments', 'profile'] : ['overview', 'swipe', 'investments', 'profile', 'llmtest']).map((tab) => (
+        {(Platform.OS === 'android' ? ['overview', 'swipe', 'investments', 'profile', 'datadebug', 'stocktest'] : ['overview', 'swipe', 'investments', 'profile', 'llmtest', 'datadebug', 'stocktest']).map((tab) => (
           <TouchableOpacity
             key={tab}
             style={[styles.tabButton, selectedTab === tab && styles.activeTab]}
@@ -404,7 +424,11 @@ export default function Dashboard({ navigation }) {
                   ? 'trending-up'
                   : tab === 'profile'
                   ? 'person'
-                  : 'flask'
+                  : tab === 'llmtest'
+                  ? 'flask'
+                  : tab === 'datadebug'
+                  ? 'bug'
+                  : 'analytics'
               }
               size={24}
               color={selectedTab === tab ? '#6366f1' : '#94a3b8'}
@@ -423,7 +447,11 @@ export default function Dashboard({ navigation }) {
                 ? 'Investments'
                 : tab === 'profile'
                 ? 'Profile'
-                : 'LLM Test'}
+                : tab === 'llmtest'
+                ? 'LLM Test'
+                : tab === 'datadebug'
+                ? 'Debug'
+                : 'Stock Test'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -590,6 +618,20 @@ const styles = StyleSheet.create({
   welcomeSubtitle: {
     fontSize: 16,
     color: '#94a3b8',
+  },
+  dataStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  dataStatusText: {
+    fontSize: 14,
+    color: '#10b981',
+    marginLeft: 8,
+    fontWeight: '500',
   },
   cardTitle: {
     fontSize: 18,
