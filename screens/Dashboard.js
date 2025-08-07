@@ -146,7 +146,7 @@ export default function Dashboard({ navigation }) {
   const renderOverview = () => (
     <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
       <View style={styles.overviewContainer}>
-        {/* Simplified overview for Android compatibility */}
+        {/* Welcome Card */}
         <View style={styles.welcomeCard}>
           <Text style={styles.welcomeTitle}>Welcome to FlexFinance!</Text>
           <Text style={styles.welcomeSubtitle}>
@@ -154,7 +154,9 @@ export default function Dashboard({ navigation }) {
           </Text>
         </View>
 
+        {/* Portfolio Summary */}
         <View style={styles.overviewCard}>
+          <Text style={styles.cardTitle}>Portfolio Summary</Text>
           <View style={styles.metricRow}>
             <Ionicons
               name="wallet"
@@ -162,16 +164,14 @@ export default function Dashboard({ navigation }) {
               color="#6366f1"
               style={styles.metricIcon}
             />
-            <View>
+            <View style={styles.metricContent}>
               <Text style={styles.metricLabel}>Cash Balance</Text>
               <Text style={styles.metricValue}>
                 ${profile?.cashBalance?.toFixed(2) || '0.00'}
               </Text>
             </View>
           </View>
-        </View>
-
-        <View style={styles.overviewCard}>
+          
           <View style={styles.metricRow}>
             <Ionicons
               name="trending-up"
@@ -179,16 +179,14 @@ export default function Dashboard({ navigation }) {
               color="#10b981"
               style={styles.metricIcon}
             />
-            <View>
+            <View style={styles.metricContent}>
               <Text style={styles.metricLabel}>Total Portfolio Value</Text>
               <Text style={styles.metricValue}>
                 ${portfolioValue.toFixed(2)}
               </Text>
             </View>
           </View>
-        </View>
 
-        <View style={styles.overviewCard}>
           <View style={styles.metricRow}>
             <Ionicons
               name="calendar"
@@ -196,7 +194,7 @@ export default function Dashboard({ navigation }) {
               color="#facc15"
               style={styles.metricIcon}
             />
-            <View>
+            <View style={styles.metricContent}>
               <Text style={styles.metricLabel}>Last Login</Text>
               <Text style={styles.metricValue}>
                 {user?.metadata?.lastSignInTime
@@ -209,25 +207,85 @@ export default function Dashboard({ navigation }) {
           </View>
         </View>
 
+        {/* Risk Profile Details */}
         {profile?.riskProfile && (
           <View style={styles.overviewCard}>
-            <Text style={styles.metricLabel}>Your Risk Profile</Text>
-            <View style={styles.riskGrid}>
-              <Text style={styles.metricDescription}>
-                📈 Volatility: {profile.riskProfile.volatility || 0}
-              </Text>
-              <Text style={styles.metricDescription}>
-                💧 Liquidity: {profile.riskProfile.liquidity || 0}
-              </Text>
-              <Text style={styles.metricDescription}>
-                ⏳ Horizon: {profile.riskProfile.timeHorizon || 0}
-              </Text>
-              <Text style={styles.metricDescription}>
-                📚 Knowledge: {profile.riskProfile.knowledge || 0}
-              </Text>
+            <Text style={styles.cardTitle}>Your Risk Profile</Text>
+            <View style={styles.riskDetailedGrid}>
+              <View style={styles.riskItem}>
+                <Text style={styles.riskLabel}>Volatility Tolerance</Text>
+                <Text style={styles.riskValue}>{profile.riskProfile.volatility || 0}/20</Text>
+                <Text style={styles.riskDescription}>
+                  {profile.riskProfile.volatility <= 8 ? 'Conservative' : 
+                   profile.riskProfile.volatility <= 12 ? 'Moderate' : 'Aggressive'}
+                </Text>
+              </View>
+              
+              <View style={styles.riskItem}>
+                <Text style={styles.riskLabel}>Liquidity Preference</Text>
+                <Text style={styles.riskValue}>{profile.riskProfile.liquidity || 0}/20</Text>
+                <Text style={styles.riskDescription}>
+                  {profile.riskProfile.liquidity <= 8 ? 'Low liquidity needs' : 
+                   profile.riskProfile.liquidity <= 12 ? 'Moderate liquidity' : 'High liquidity needs'}
+                </Text>
+              </View>
+              
+              <View style={styles.riskItem}>
+                <Text style={styles.riskLabel}>Time Horizon</Text>
+                <Text style={styles.riskValue}>{profile.riskProfile.timeHorizon || 0}/20</Text>
+                <Text style={styles.riskDescription}>
+                  {profile.riskProfile.timeHorizon <= 8 ? 'Short-term (1-3 years)' : 
+                   profile.riskProfile.timeHorizon <= 12 ? 'Medium-term (3-5 years)' : 'Long-term (5+ years)'}
+                </Text>
+              </View>
+              
+              <View style={styles.riskItem}>
+                <Text style={styles.riskLabel}>Investment Knowledge</Text>
+                <Text style={styles.riskValue}>{profile.riskProfile.knowledge || 0}/20</Text>
+                <Text style={styles.riskDescription}>
+                  {profile.riskProfile.knowledge <= 8 ? 'Beginner' : 
+                   profile.riskProfile.knowledge <= 12 ? 'Intermediate' : 'Expert'}
+                </Text>
+              </View>
             </View>
           </View>
         )}
+
+        {/* Quick Actions */}
+        <View style={styles.overviewCard}>
+          <Text style={styles.cardTitle}>Quick Actions</Text>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setSelectedTab('swipe')}
+          >
+            <Ionicons name="heart" size={20} color="#10b981" />
+            <Text style={styles.actionButtonText}>Swipe Stocks</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setSelectedTab('investments')}
+          >
+            <Ionicons name="trending-up" size={20} color="#6366f1" />
+            <Text style={styles.actionButtonText}>View Investments</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('SettingsScreen')}
+          >
+            <Ionicons name="settings" size={20} color="#facc15" />
+            <Text style={styles.actionButtonText}>Settings</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Reset Risk Profile Button */}
+        <TouchableOpacity
+          style={styles.resetButton}
+          onPress={handleResetRiskProfile}
+        >
+          <Text style={styles.resetButtonText}>Reset Risk Profile</Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -417,6 +475,9 @@ const styles = StyleSheet.create({
   metricIcon: {
     marginRight: 12,
   },
+  metricContent: {
+    flex: 1,
+  },
   metricLabel: { color: '#94a3b8', fontSize: 14 },
   metricValue: { color: '#ffffff', fontSize: 20, fontWeight: 'bold', marginTop: 4 },
   metricDescription: { color: '#94a3b8', fontSize: 14, marginTop: 8, width: '48%' },
@@ -529,5 +590,28 @@ const styles = StyleSheet.create({
   welcomeSubtitle: {
     fontSize: 16,
     color: '#94a3b8',
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginBottom: 16,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  actionButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 10,
   },
 });

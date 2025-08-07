@@ -6,14 +6,14 @@ import { Platform } from 'react-native';
 
 const extra = Constants.expoConfig?.extra || Constants.manifest?.extra;
 
-// Use the actual Firebase config from your google-services-2.json
+// Use environment variables for Firebase config
 const firebaseConfig = {
-  apiKey: "AIzaSyDXvcgkEF1476JRFlafgPxK1HaqBbX9lP8",
-  authDomain: "flexfinance-20c90.firebaseapp.com",
-  projectId: "flexfinance-20c90",
-  storageBucket: "flexfinance-20c90.appspot.com",
-  messagingSenderId: "517568675166",
-  appId: "1:517568675166:android:0ece24a5eea74357df23cf"
+  apiKey: extra?.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyDXvcgkEF1476JRFlafgPxK1HaqBbX9lP8",
+  authDomain: extra?.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "flexfinance-20c90.firebaseapp.com",
+  projectId: extra?.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "flexfinance-20c90",
+  storageBucket: extra?.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "flexfinance-20c90.appspot.com",
+  messagingSenderId: extra?.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "517568675166",
+  appId: extra?.EXPO_PUBLIC_FIREBASE_APP_ID || "1:517568675166:android:0ece24a5eea74357df23cf"
 };
 
 const requiredFields = [

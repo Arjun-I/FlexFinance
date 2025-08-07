@@ -31,7 +31,7 @@ export default function DiagnosticScreen({ navigation }) {
       isTV: Platform.isTV,
       expoVersion: Constants.expoConfig?.version || 'unknown',
       expoSDKVersion: Constants.expoConfig?.sdkVersion || 'unknown',
-      bundleIdentifier: Constants.expoConfig?.ios?.bundleIdentifier || Constants.expoConfig?.android?.package || 'unknown',
+      bundleIdentifier: Constants.expoConfig?.android?.package || 'unknown',
       appName: Constants.expoConfig?.name || 'FlexFinance',
       orientation: Constants.expoConfig?.orientation || 'portrait',
       userInterfaceStyle: Constants.expoConfig?.userInterfaceStyle || 'dark',

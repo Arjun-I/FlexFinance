@@ -160,7 +160,7 @@ export default function LoginScreen({ navigation, setHasCompletedQuiz }) {
 
   return (
     <LinearGradient colors={['#0f172a', '#1e293b', '#334155']} style={styles.container}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
+      <KeyboardAvoidingView behavior="height" style={styles.keyboardView}>
         <ScrollView contentContainerStyle={styles.scrollContainer}>
           <View style={styles.header}>
             <View style={styles.logoContainer}>

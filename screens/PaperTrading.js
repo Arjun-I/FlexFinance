@@ -355,40 +355,123 @@ export default function PaperTrading() {
     }
   };
 
-  const renderPortfolioItem = ({ item }) => (
-    <View style={styles.portfolioItem}>
-      <View style={styles.stockInfo}>
-        <Text style={styles.symbol}>{item.symbol}</Text>
-        <Text style={styles.shares}>{item.shares} shares</Text>
-        <Text style={styles.avgPrice}>Avg: ${item.averagePrice?.toFixed(2) || '0.00'}</Text>
+  const renderPortfolioItem = ({ item }) => {
+    const currentPrice = item.currentPrice || item.averagePrice || 100;
+    const currentValue = item.shares * currentPrice;
+    const profitLoss = currentValue - item.totalCost;
+    const profitLossPercent = ((profitLoss / item.totalCost) * 100) || 0;
+
+    return (
+      <View style={styles.portfolioItem}>
+        <View style={styles.stockInfo}>
+          <Text style={styles.symbol}>{item.symbol}</Text>
+          <Text style={styles.shares}>{item.shares} shares @ ${item.averagePrice?.toFixed(2) || '0.00'}</Text>
+          <Text style={styles.industry}>{item.industry || 'Unknown'}</Text>
+        </View>
+        
+        <View style={styles.priceInfo}>
+          <Text style={styles.currentValue}>
+            ${currentValue.toFixed(2)}
+          </Text>
+          <Text style={[styles.profitLoss, { color: profitLoss >= 0 ? '#10b981' : '#ef4444' }]}>
+            {profitLoss >= 0 ? '+' : ''}{profitLoss.toFixed(2)} ({profitLossPercent.toFixed(1)}%)
+          </Text>
+        </View>
+        
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={styles.buyMoreButton}
+            onPress={() => {
+              setEditingStock(item);
+              setEditShares('');
+            }}
+          >
+            <Ionicons name="add-circle" size={20} color="#10b981" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.sellButton}
+            onPress={() => sellStock(item)}
+          >
+            <Ionicons name="remove-circle" size={20} color="#ef4444" />
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={styles.priceInfo}>
-        <Text style={styles.currentValue}>
-          ${(item.shares * (item.currentPrice || item.averagePrice || 100)).toFixed(2)}
-        </Text>
-        <Text style={styles.totalValue}>
-          Total: ${item.totalCost?.toFixed(2) || '0.00'}
-        </Text>
+    );
+  };
+
+  const renderBuySellModal = () => {
+    if (!editingStock) return null;
+
+    return (
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>
+            {editingStock.symbol} - {editingStock.shares} shares
+          </Text>
+          
+          <View style={styles.modalInfo}>
+            <Text style={styles.modalInfoText}>
+              Current Price: ${(editingStock.currentPrice || editingStock.averagePrice || 100).toFixed(2)}
+            </Text>
+            <Text style={styles.modalInfoText}>
+              Average Cost: ${editingStock.averagePrice?.toFixed(2) || '0.00'}
+            </Text>
+            <Text style={styles.modalInfoText}>
+              Available Cash: ${cash.toFixed(2)}
+            </Text>
+          </View>
+
+          <View style={styles.modalInputs}>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Number of shares"
+              value={editShares}
+              onChangeText={setEditShares}
+              keyboardType="numeric"
+              placeholderTextColor="#94a3b8"
+            />
+          </View>
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => {
+                const newShares = parseInt(editShares) || 0;
+                if (newShares > 0) {
+                  updateStockShares(editingStock, editingStock.shares + newShares);
+                }
+              }}
+            >
+              <Text style={styles.modalButtonText}>Buy More</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.modalButton, styles.sellModalButton]}
+              onPress={() => {
+                const sellShares = parseInt(editShares) || 0;
+                if (sellShares > 0 && sellShares <= editingStock.shares) {
+                  updateStockShares(editingStock, editingStock.shares - sellShares);
+                }
+              }}
+            >
+              <Text style={styles.modalButtonText}>Sell Shares</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => {
+              setEditingStock(null);
+              setEditShares('');
+            }}
+          >
+            <Text style={styles.closeButtonText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() => {
-            setEditingStock(item);
-            setEditShares(item.shares.toString());
-          }}
-        >
-          <Ionicons name="pencil" size={16} color="#6366f1" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.sellButton}
-          onPress={() => sellStock(item)}
-        >
-          <Ionicons name="close-circle" size={16} color="#ef4444" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const renderCharts = () => {
     if (!chartsEnabled) {
@@ -553,6 +636,7 @@ export default function PaperTrading() {
             value={ticker}
             onChangeText={setTicker}
             placeholderTextColor="#94a3b8"
+            autoCapitalize="characters"
           />
           <TextInput
             style={styles.input}
@@ -563,7 +647,53 @@ export default function PaperTrading() {
             placeholderTextColor="#94a3b8"
           />
         </View>
-        <Button title="Buy" onPress={buyStock} color="#10b981" />
+        
+        <View style={styles.quickBuyButtons}>
+          <TouchableOpacity
+            style={styles.quickBuyButton}
+            onPress={() => {
+              setTicker('AAPL');
+              setShares('10');
+            }}
+          >
+            <Text style={styles.quickBuyText}>AAPL</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickBuyButton}
+            onPress={() => {
+              setTicker('MSFT');
+              setShares('10');
+            }}
+          >
+            <Text style={styles.quickBuyText}>MSFT</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickBuyButton}
+            onPress={() => {
+              setTicker('GOOGL');
+              setShares('5');
+            }}
+          >
+            <Text style={styles.quickBuyText}>GOOGL</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickBuyButton}
+            onPress={() => {
+              setTicker('TSLA');
+              setShares('5');
+            }}
+          >
+            <Text style={styles.quickBuyText}>TSLA</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <TouchableOpacity
+          style={styles.buyButton}
+          onPress={buyStock}
+        >
+          <Ionicons name="add-circle" size={20} color="#ffffff" />
+          <Text style={styles.buyButtonText}>Buy Stock</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.portfolioSection}>
@@ -579,6 +709,7 @@ export default function PaperTrading() {
 
       {/* Charts */}
       {renderCharts()}
+      {renderBuySellModal()}
       </ScrollView>
     </View>
   );
@@ -657,6 +788,40 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     marginRight: 8,
+  },
+  quickBuyButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    marginBottom: 15,
+  },
+  quickBuyButton: {
+    backgroundColor: '#334155',
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    marginVertical: 5,
+  },
+  quickBuyText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  buyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10b981',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginTop: 10,
+  },
+  buyButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
   portfolioSection: {
     backgroundColor: '#1e293b',
@@ -799,5 +964,98 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontSize: 16,
     textAlign: 'center',
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 20,
+    width: '80%',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginBottom: 15,
+  },
+  modalInfo: {
+    width: '100%',
+    marginBottom: 15,
+  },
+  modalInfoText: {
+    fontSize: 14,
+    color: '#94a3b8',
+    marginBottom: 5,
+  },
+  modalInputs: {
+    width: '100%',
+    marginBottom: 15,
+  },
+  modalInput: {
+    backgroundColor: '#334155',
+    color: '#ffffff',
+    padding: 12,
+    borderRadius: 8,
+    fontSize: 16,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    marginBottom: 15,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginHorizontal: 5,
+    backgroundColor: '#10b981',
+  },
+  modalButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  sellModalButton: {
+    backgroundColor: '#ef4444',
+  },
+  closeButton: {
+    backgroundColor: '#7f1d1d',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  buyMoreButton: {
+    padding: 8,
+    backgroundColor: '#1e293b',
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  profitLoss: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  industry: {
+    fontSize: 12,
+    color: '#94a3b8',
   },
 });

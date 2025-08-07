@@ -16,7 +16,6 @@ import SupportScreen from './screens/SupportScreen';
 import TermsScreen from './screens/TermsScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
 import DiagnosticScreen from './screens/DiagnosticScreen';
-import TestScreen from './screens/TestScreen';
 import SimpleTestScreen from './screens/SimpleTestScreen';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -28,6 +27,8 @@ const Stack = createNativeStackNavigator();
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [user, setUser] = useState(null);
+  const [hasCompletedQuiz, setHasCompletedQuiz] = useState(false);
 
   useEffect(() => {
     debugService.info('App starting up', { platform: Platform.OS });

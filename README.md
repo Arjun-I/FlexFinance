@@ -1,41 +1,35 @@
 # FlexFinance - Personal Finance App
 
-A modern React Native finance app with Firebase authentication, risk assessment, and beautiful UI.
+A React Native app for personalized stock recommendations and portfolio management with AI-powered investment analysis.
 
 ## Features
 
-- 🔐 **Firebase Authentication** - Secure login/signup with email and password
-- 📊 **Risk Assessment Quiz** - Interactive quiz to determine investment risk tolerance
-- 🤖 **AI-Generated Stock Recommendations** - Dynamic stock picks based on user preferences and risk profile
-- 💰 **Stock Swiping Interface** - Tinder-like interface for AI-generated stock discovery
-- 📈 **Paper Trading** - Practice trading with virtual money and real-time data
-- 🎯 **Personalized Portfolio** - Track liked stocks and portfolio performance
-- 🎨 **Modern UI** - Beautiful gradient backgrounds and smooth animations
-- 📱 **Responsive Design** - Works on iOS and Android
-- 🧠 **LLM-Powered Analysis** - AI-driven stock analysis and insights
-- 🔄 **Daily Stock Refresh** - New personalized recommendations each day
+- **AI-Powered Investment Analysis**: Advanced LLM integration using GPT-4o mini for personalized stock recommendations
+- **Comprehensive Stock Analysis**: Detailed investment theses, risk assessments, and growth potential analysis
+- **Swipe Interface**: Tinder-like interface for stock discovery with investment-grade information
+- **Portfolio Tracking**: Monitor your investments and portfolio performance
+- **Risk Assessment**: Complete risk profile quiz for personalized recommendations
+- **Daily Limits**: 10 swipes per day to prevent over-trading
+- **Real-time Data**: Integration with Yahoo Finance API for current stock prices and metrics
 
-## Screenshots
+## Investment Analysis Features
 
-### Login Screen
-- Modern gradient background
-- Email and password authentication
-- Toggle between login and signup
-- Password visibility toggle
+### AI-Generated Investment Insights
+- **Investment Thesis**: Detailed reasoning for each stock recommendation
+- **Risk Assessment**: Specific risks aligned with your risk tolerance
+- **Growth Potential**: Expected growth drivers and timeline
+- **Portfolio Fit**: How each stock diversifies your current holdings
+- **Target Prices**: AI-estimated price targets
+- **Dividend Analysis**: Dividend yield information for income investors
 
-### Risk Assessment Quiz
-- 5 comprehensive questions
-- Progress tracking
-- Risk profile calculation
-- Beautiful results display
+### Comprehensive Stock Information
+- **Market Capitalization**: Large, mid, and small cap classifications
+- **Sector Diversification**: Recommendations across multiple sectors
+- **Industry Analysis**: Detailed industry-specific insights
+- **Confidence Scores**: AI confidence levels for each recommendation
+- **Investment Recommendations**: Buy, hold, or avoid ratings
 
-### Dashboard
-- Financial overview with balance and stats
-- Recent transactions
-- Tab navigation (Overview, Budget, Investments, Profile)
-- Sign out functionality
-
-## Setup Instructions
+## Setup
 
 1. **Install Dependencies**
    ```bash
@@ -43,107 +37,106 @@ A modern React Native finance app with Firebase authentication, risk assessment,
    ```
 
 2. **Environment Configuration**
-   - Copy `env.example` to `.env`
-   - Add your Firebase and OpenAI API keys
-   - Configure your environment variables
+   Create a `.env` file in the root directory with your API keys:
+   ```
+   # Firebase Configuration (Required)
+   EXPO_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key_here
+   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+   EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
 
-3. **Firebase Configuration**
-   - Your Firebase config is already set up in `firebase.js`
-   - Make sure your Firebase project has Authentication enabled
-   - Enable Email/Password authentication in Firebase Console
+   # OpenAI API Key for LLM Integration (Configured)
+   EXPO_PUBLIC_OPENAI_API_KEY=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
 
-4. **LLM Integration (Optional)**
-   - Add your OpenAI API key to `.env` for AI recommendations
-   - Without the API key, the app will use fallback recommendations
-
-5. **Run the App**
-   ```bash
-   npm start
+   # Yahoo Finance API (Free, no key required)
+   EXPO_PUBLIC_YAHOO_FINANCE_ENABLED=true
    ```
 
-6. **Test on Device/Simulator**
-   - Press `i` for iOS simulator
-   - Press `a` for Android emulator
-   - Scan QR code with Expo Go app
-
-## App Flow
-
-1. **Login/Signup** - Users authenticate with Firebase
-2. **Risk Assessment** - New users complete a 5-question risk quiz
-3. **Dashboard** - Main app with financial overview and navigation
-
-## Tech Stack
-
-- **React Native** - Cross-platform mobile development
-- **Expo** - Development platform and tools
-- **Firebase** - Authentication and backend services
-- **React Navigation** - Screen navigation
-- **Expo Linear Gradient** - Beautiful gradient backgrounds
-- **Expo Vector Icons** - Icon library
-- **OpenAI API** - LLM integration for personalized recommendations
-- **Yahoo Finance API** - Real-time stock data and market information (free, no key required)
-
-## File Structure
-
-```
-FlexFinance-1/
-├── App.js                    # Main app component with navigation
-├── firebase.js               # Firebase configuration
-├── LoginScreen.js            # Authentication screen
-├── RiskQuiz.js               # Risk assessment quiz
-├── Dashboard.js              # Main dashboard with tabs
-├── SwipeStocksGenerated.js   # AI-generated stock swiping interface
-├── stockGenerationService.js # Stock generation and Yahoo Finance integration
-├── llmService.js             # LLM integration service
-├── ErrorBoundary.js          # Error handling component
-├── InvestmentsScreen.js      # Portfolio and stock preferences
-├── PaperTrading.js           # Paper trading functionality
-├── package.json              # Dependencies and scripts
-└── README.md                # This file
-```
-
-## Customization
-
-### Colors
-The app uses a modern dark theme with:
-- Primary: `#6366f1` (Indigo)
-- Success: `#10b981` (Green)
-- Warning: `#f59e0b` (Amber)
-- Danger: `#ef4444` (Red)
-- Background: `#0f172a` (Dark slate)
-
-### Adding Features
-- **Budget Tracking** - Implement in the Budget tab
-- **Investment Portfolio** - Add to the Investments tab
-- **Data Persistence** - Use Firebase Firestore for user data
-- **Push Notifications** - Add with Expo notifications
-
-## Development
-
-### Adding New Screens
-1. Create a new component file
-2. Add it to the navigation stack in `App.js`
-3. Update the navigation logic as needed
-
-### Styling
-The app uses a consistent design system with:
-- Rounded corners (12px radius)
-- Subtle borders and shadows
-- Gradient backgrounds
-- Consistent spacing (24px, 16px, 12px)
+3. **Run the App**
+   ```bash
+   npx expo start
+   ```
 
 ## Troubleshooting
 
-### Common Issues
-1. **Firebase Auth Errors** - Check your Firebase configuration
-2. **Navigation Issues** - Ensure all dependencies are installed
-3. **Gradient Not Working** - Make sure `expo-linear-gradient` is installed
+### LLM Investment Analysis
+- **Status**: ✅ **CONFIGURED** - Using GPT-4o mini model for investment analysis
+- **Features**: Investment theses, risk assessment, growth potential, target prices
+- **Testing**: Use the LLM Test tab to verify investment analysis functionality
 
-### Getting Help
-- Check the Expo documentation
-- Review Firebase setup guides
-- Test on different devices/simulators
+### Swipe Limit Issues
+- **Issue**: App says you've used all swipes but you haven't
+- **Solution**: The swipe count resets daily. Check the date in the swipe interface
+- **Fix**: The app now has improved date tracking and logging
 
-## License
+### Dashboard Overview
+- **Status**: ✅ **ENHANCED** - Comprehensive portfolio metrics and risk profile details
+- **Features**: Detailed investment overview with quick action buttons
 
-This project is for educational purposes. Feel free to modify and extend it for your own projects.
+### Stock Generation
+- **Status**: ✅ **ENHANCED** - AI-powered stock recommendations with real-time data
+- **Features**: LLM analysis + Yahoo Finance integration for comprehensive investment insights
+
+### API Configuration
+- **Firebase**: Required for user authentication and data storage
+- **OpenAI**: ✅ **CONFIGURED** - Using GPT-4o mini for enhanced investment analysis
+- **Yahoo Finance**: Free API for real-time stock data (no key required)
+
+## Investment Features
+
+### AI-Powered Recommendations
+The app uses advanced LLM technology to provide:
+- **Personalized Analysis**: Based on your risk profile and investment preferences
+- **Comprehensive Research**: Detailed analysis of business models, financials, and growth prospects
+- **Risk Assessment**: Specific risks and how they align with your tolerance
+- **Portfolio Optimization**: Recommendations that diversify your holdings
+
+### Real-time Data Integration
+- **Current Prices**: Live stock prices from Yahoo Finance
+- **Market Metrics**: P/E ratios, dividend yields, market capitalization
+- **Price Changes**: Real-time price movement tracking
+- **Financial Data**: Company financials and performance metrics
+
+### Smart Caching System
+- **Price Updates**: Stock prices updated every 5 minutes for timeliness
+- **Market Cap Updates**: Market capitalization updated once daily to avoid rate limiting
+- **Intelligent Caching**: LRU cache with automatic cleanup of expired entries
+- **Rate Limit Management**: Smart API calls to avoid hitting Yahoo Finance limits
+- **Fallback Data**: Graceful degradation when APIs are unavailable
+
+### Cache Management
+- **Cache Statistics**: Monitor cache performance and usage
+- **Automatic Cleanup**: Expired entries removed automatically
+- **Force Refresh**: Manual cache refresh for specific stocks
+- **Memory Optimization**: Maximum 100 cached stocks to prevent memory issues
+
+## Development
+
+### Key Files
+- `App.js` - Main app component
+- `screens/Dashboard.js` - Main dashboard with overview
+- `screens/SwipeStocksMock.js` - Enhanced stock swiping with investment analysis
+- `services/llmService.js` - AI-powered investment analysis
+- `services/stockGenerationService.js` - Stock data generation with real-time integration
+
+### Testing Investment Features
+Use the LLM Test tab in the dashboard to:
+- Test AI investment analysis
+- Verify real-time data integration
+- Check recommendation quality
+- Validate risk assessment features
+
+## Platform Support
+- **iOS**: Full feature support with enhanced investment analysis
+- **Android**: Optimized for stability with investment features
+
+## Recent Enhancements
+- ✅ Enhanced LLM integration with GPT-4o mini for investment analysis
+- ✅ Comprehensive stock analysis with investment theses and risk assessment
+- ✅ Real-time data integration with Yahoo Finance API
+- ✅ Enhanced stock cards with detailed investment information
+- ✅ Investment recommendation badges (buy/hold/avoid)
+- ✅ Target price and dividend yield analysis
+- ✅ Portfolio diversification recommendations

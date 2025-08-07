@@ -61,6 +61,19 @@ class SmartRateLimiter {
     return { canCall: true };
   }
 
+  // Check rate limit (for compatibility with stockGenerationService)
+  async checkRateLimit(userId = 'anonymous', portfolioSize = 0) {
+    const canCall = await this.canMakeCall(userId, portfolioSize);
+    if (!canCall.canCall) {
+      throw new Error(canCall.reason);
+    }
+  }
+
+  // Update rate limit (for compatibility with stockGenerationService)
+  updateRateLimit(userId = 'anonymous', portfolioSize = 0) {
+    this.recordCall(userId, portfolioSize);
+  }
+
   // Record an API call
   recordCall(userId, portfolioSize = 0) {
     this.globalLimits.calls++;

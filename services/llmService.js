@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 
 // Mock LLM API endpoint (replace with actual LLM service)
 const LLM_API_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
-const LLM_API_KEY = Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY;
+const LLM_API_KEY = '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';
 
 class LLMService {
   constructor() {
@@ -70,64 +70,86 @@ class LLMService {
     const portfolio = this.userPreferences.portfolio;
 
     return `
-You are a financial advisor providing personalized stock recommendations.
+You are an expert financial advisor providing personalized stock recommendations for investment purposes.
 
-User Profile:
-- Risk Tolerance: ${this.getRiskLevel(riskProfile.volatility)}
+INVESTMENT CONTEXT:
+- User's Risk Tolerance: ${this.getRiskLevel(riskProfile.volatility)}
 - Investment Horizon: ${this.getTimeHorizon(riskProfile.timeHorizon)}
 - Investment Knowledge: ${this.getKnowledgeLevel(riskProfile.knowledge)}
-- Ethical Preferences: ${this.getEthicalLevel(riskProfile.ethics)}
-- Current Cash: $${this.userPreferences.cashBalance.toLocaleString()}
+- Current Cash Available: $${this.userPreferences.cashBalance.toLocaleString()}
+- Portfolio Value: $${this.userPreferences.portfolio.reduce((sum, p) => sum + (p.shares * p.averagePrice), 0).toLocaleString()}
 
-User Preferences:
-- Liked Stocks: ${likedStocks.map(s => s.symbol).join(', ') || 'None'}
-- Rejected Stocks: ${rejectedStocks.map(s => s.symbol).join(', ') || 'None'}
-- Current Portfolio: ${portfolio.map(p => `${p.shares}x ${p.ticker}`).join(', ') || 'Empty'}
+USER PREFERENCES:
+- Previously Liked Stocks: ${likedStocks.map(s => s.symbol).join(', ') || 'None'}
+- Previously Rejected Stocks: ${rejectedStocks.map(s => s.symbol).join(', ') || 'None'}
+- Current Portfolio Holdings: ${portfolio.map(p => `${p.shares}x ${p.ticker}`).join(', ') || 'Empty'}
 
-Based on the user's risk profile and preferences, recommend exactly ${maxRecommendations} stocks that would be suitable for this investor. Consider:
-1. Risk tolerance alignment
-2. Investment horizon compatibility
-3. Portfolio diversification across different sectors and industries
-4. User's previous likes/rejections
-5. Ethical preferences
-6. Market sectors and industries that align with user preferences
+INVESTMENT REQUIREMENTS:
+Generate exactly ${maxRecommendations} stock recommendations that are suitable for this investor to consider for investment. Each recommendation must include:
 
-IMPORTANT: Generate diverse stock recommendations across different sectors (Technology, Healthcare, Finance, Consumer, Energy, Industrial, etc.) and industries within those sectors. Do not repeat stocks the user has already liked or rejected.
+1. **Stock Analysis**: Detailed analysis of why this stock fits the user's profile
+2. **Investment Thesis**: Clear reasoning for why this stock is a good investment
+3. **Risk Assessment**: Specific risks and how they align with user's risk tolerance
+4. **Growth Potential**: Expected growth drivers and timeline
+5. **Portfolio Fit**: How this stock diversifies their current holdings
 
-Format your response as a JSON array with objects containing:
+IMPORTANT INVESTMENT CRITERIA:
+- Diversify across different sectors (Technology, Healthcare, Finance, Consumer, Energy, Industrial, etc.)
+- Consider market capitalization (large, mid, small cap)
+- Factor in current market conditions and trends
+- Avoid stocks the user has already liked or rejected
+- Provide actionable investment insights
+
+RESPONSE FORMAT - Return a JSON array with objects containing:
 {
   "symbol": "STOCK_SYMBOL",
-  "reason": "Brief explanation of why this stock fits the user's profile",
-  "riskLevel": "low/medium/high",
-  "confidence": 0.0-1.0,
+  "name": "Full Company Name",
   "sector": "Technology/Healthcare/Finance/Consumer/Energy/Industrial/etc",
   "industry": "Software/Pharmaceuticals/Banking/Retail/Oil & Gas/Manufacturing/etc",
+  "reason": "Detailed investment thesis explaining why this stock is recommended",
+  "analysis": "Comprehensive analysis of the company's business model, financials, and growth prospects",
+  "riskLevel": "low/medium/high",
+  "confidence": 0.0-1.0,
   "marketCap": "large/mid/small",
-  "growthPotential": "low/medium/high"
+  "growthPotential": "low/medium/high",
+  "investmentHorizon": "short-term/medium-term/long-term",
+  "keyRisks": ["Risk 1", "Risk 2", "Risk 3"],
+  "keyBenefits": ["Benefit 1", "Benefit 2", "Benefit 3"],
+  "targetPrice": "Current price estimate",
+  "dividendYield": "Dividend yield if applicable",
+  "recommendation": "buy/hold/avoid"
 }
+
+Focus on providing investment-grade analysis that would help an investor make informed decisions.
 `;
   }
 
   // Call LLM API (mock implementation)
   async callLLM(prompt) {
-    if (!LLM_API_KEY || LLM_API_KEY === "sk-placeholder-key" || LLM_API_KEY.includes("placeholder")) {
-      console.warn('⚠️ No valid LLM API key configured, using mock response');
-      return this.getMockRecommendations();
+    const apiKey = LLM_API_KEY;
+    
+    // Check if API key is properly configured
+    if (!apiKey || apiKey === "sk-placeholder-key" || apiKey.includes("placeholder") || apiKey === "your_openai_api_key_here") {
+      console.error('❌ No valid LLM API key configured');
+      throw new Error('OpenAI API key not configured. Please set a valid API key.');
     }
 
     try {
+      console.log('🤖 Calling OpenAI API with 4o mini model...');
+      console.log('📝 Prompt length:', prompt.length, 'characters');
+      
       const response = await fetch(LLM_API_ENDPOINT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${LLM_API_KEY}`,
+          'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'gpt-4',
+          model: 'gpt-4o-mini',
           messages: [
             {
               role: 'system',
-              content: 'You are a financial advisor providing personalized stock recommendations. Always respond with valid JSON.'
+              content: 'You are an expert financial advisor providing personalized stock recommendations for investment purposes. Always respond with valid JSON.'
             },
             {
               role: 'user',
@@ -135,15 +157,34 @@ Format your response as a JSON array with objects containing:
             }
           ],
           temperature: 0.7,
-          max_tokens: 1000,
+          max_tokens: 2000,
         }),
       });
 
+      console.log('📡 API Response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ OpenAI API error:', response.status, errorData);
+        throw new Error(`OpenAI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+      }
+
       const data = await response.json();
-      return data.choices[0]?.message?.content || this.getMockRecommendations();
+      console.log('📄 Raw API response:', JSON.stringify(data, null, 2));
+      
+      const content = data.choices?.[0]?.message?.content;
+      
+      if (!content) {
+        console.error('❌ No content in OpenAI response');
+        throw new Error('No content received from OpenAI API');
+      }
+
+      console.log('✅ OpenAI API call successful with 4o mini model');
+      console.log('📝 Response content length:', content.length, 'characters');
+      return content;
     } catch (error) {
-      console.error('❌ LLM API error:', error);
-      return this.getMockRecommendations();
+      console.error('❌ LLM API error:', error.message);
+      throw error; // Don't fall back to mock, let the error propagate
     }
   }
 
@@ -160,97 +201,66 @@ Format your response as a JSON array with objects containing:
       } else if (recommendations.recommendations && Array.isArray(recommendations.recommendations)) {
         return recommendations.recommendations.slice(0, maxRecommendations);
       } else {
-        console.warn('❌ Unexpected LLM response format:', recommendations);
-        return this.getFallbackRecommendations(maxRecommendations);
+        console.error('❌ Unexpected LLM response format:', recommendations);
+        throw new Error('Invalid response format from LLM');
       }
     } catch (error) {
       console.error('❌ Error parsing LLM response:', error);
-      return this.getFallbackRecommendations(maxRecommendations);
+      throw new Error(`Failed to parse LLM response: ${error.message}`);
     }
   }
 
-  // Fallback recommendations based on risk profile
+  // Fallback recommendations based on risk profile - only used if LLM completely fails
   getFallbackRecommendations(maxRecommendations) {
     const riskLevel = this.getRiskLevel(this.riskProfile?.volatility);
     
     const recommendations = {
       low: [
-        { symbol: 'AAPL', sector: 'Technology', industry: 'Consumer Electronics', reason: 'Stable tech giant with strong fundamentals' },
-        { symbol: 'MSFT', sector: 'Technology', industry: 'Software', reason: 'Diversified tech company with cloud growth' },
-        { symbol: 'JNJ', sector: 'Healthcare', industry: 'Pharmaceuticals', reason: 'Defensive healthcare stock with dividend' },
-        { symbol: 'PG', sector: 'Consumer', industry: 'Consumer Staples', reason: 'Consumer staples with stable earnings' },
-        { symbol: 'KO', sector: 'Consumer', industry: 'Beverages', reason: 'Beverage giant with global presence' },
-        { symbol: 'WMT', sector: 'Consumer', industry: 'Retail', reason: 'Retail leader with defensive characteristics' },
-        { symbol: 'HD', sector: 'Consumer', industry: 'Home Improvement', reason: 'Home improvement leader with strong brand' },
-        { symbol: 'MCD', sector: 'Consumer', industry: 'Restaurants', reason: 'Fast food leader with global reach' },
-        { symbol: 'DIS', sector: 'Consumer', industry: 'Entertainment', reason: 'Entertainment giant with diverse revenue' },
-        { symbol: 'PEP', sector: 'Consumer', industry: 'Beverages', reason: 'Beverage company with strong cash flow' }
-      ],
-      medium: [
-        { symbol: 'GOOGL', sector: 'Technology', industry: 'Internet Services', reason: 'Tech leader with advertising dominance' },
-        { symbol: 'AMZN', sector: 'Consumer', industry: 'E-commerce', reason: 'E-commerce and cloud services leader' },
-        { symbol: 'TSLA', sector: 'Consumer', industry: 'Automotive', reason: 'Electric vehicle and clean energy pioneer' },
-        { symbol: 'NVDA', sector: 'Technology', industry: 'Semiconductors', reason: 'AI and gaming chip leader' },
-        { symbol: 'META', sector: 'Technology', industry: 'Social Media', reason: 'Social media and metaverse company' },
-        { symbol: 'NFLX', sector: 'Consumer', industry: 'Entertainment', reason: 'Streaming entertainment leader' },
-        { symbol: 'CRM', sector: 'Technology', industry: 'Software', reason: 'Cloud software and customer relations' },
-        { symbol: 'ADBE', sector: 'Technology', industry: 'Software', reason: 'Creative software and digital media' },
-        { symbol: 'PYPL', sector: 'Technology', industry: 'Financial Technology', reason: 'Digital payments and fintech leader' },
-        { symbol: 'UBER', sector: 'Technology', industry: 'Transportation', reason: 'Ride-sharing and delivery platform' }
-      ],
-      high: [
-        { symbol: 'AMD', sector: 'Technology', industry: 'Semiconductors', reason: 'Semiconductor company with growth potential' },
-        { symbol: 'SPOT', sector: 'Consumer', industry: 'Entertainment', reason: 'Music streaming with global expansion' },
-        { symbol: 'ZM', sector: 'Technology', industry: 'Software', reason: 'Video communications platform' },
-        { symbol: 'CRWD', sector: 'Technology', industry: 'Cybersecurity', reason: 'Cybersecurity with high growth' },
-        { symbol: 'PLTR', sector: 'Technology', industry: 'Software', reason: 'Data analytics and AI platform' },
-        { symbol: 'SNOW', sector: 'Technology', industry: 'Software', reason: 'Cloud data warehousing company' },
-        { symbol: 'RBLX', sector: 'Technology', industry: 'Gaming', reason: 'Gaming and metaverse platform' },
-        { symbol: 'SQ', sector: 'Technology', industry: 'Financial Technology', reason: 'Digital payments and fintech' },
-        { symbol: 'SHOP', sector: 'Technology', industry: 'E-commerce', reason: 'E-commerce platform for businesses' },
-        { symbol: 'TWLO', sector: 'Technology', industry: 'Software', reason: 'Cloud communications platform' }
-      ]
-    };
-
-    const suitableStocks = recommendations[riskLevel] || recommendations.medium;
-    return suitableStocks.slice(0, maxRecommendations).map(stock => ({
-      ...stock,
-      riskLevel,
-      confidence: 0.8,
-      marketCap: 'large',
-      growthPotential: riskLevel === 'high' ? 'high' : riskLevel === 'medium' ? 'medium' : 'low'
-    }));
-  }
-
-  // Mock LLM response for testing
-  getMockRecommendations() {
-    const riskLevel = this.getRiskLevel(this.riskProfile?.volatility);
-    
-    const mockRecommendations = {
-      low: [
-        { symbol: 'AAPL', sector: 'Technology', industry: 'Consumer Electronics', reason: 'Stable tech giant suitable for conservative investors', riskLevel: 'low', confidence: 0.9 },
-        { symbol: 'MSFT', sector: 'Technology', industry: 'Software', reason: 'Diversified tech company with strong fundamentals', riskLevel: 'low', confidence: 0.85 },
+        { symbol: 'AAPL', sector: 'Technology', industry: 'Consumer Electronics', reason: 'Stable tech giant with strong fundamentals', riskLevel: 'low', confidence: 0.8 },
+        { symbol: 'MSFT', sector: 'Technology', industry: 'Software', reason: 'Diversified tech company with cloud growth', riskLevel: 'low', confidence: 0.85 },
         { symbol: 'JNJ', sector: 'Healthcare', industry: 'Pharmaceuticals', reason: 'Defensive healthcare stock with dividend', riskLevel: 'low', confidence: 0.8 },
         { symbol: 'PG', sector: 'Consumer', industry: 'Consumer Staples', reason: 'Consumer staples with stable earnings', riskLevel: 'low', confidence: 0.8 },
-        { symbol: 'KO', sector: 'Consumer', industry: 'Beverages', reason: 'Beverage giant with global presence', riskLevel: 'low', confidence: 0.75 }
+        { symbol: 'KO', sector: 'Consumer', industry: 'Beverages', reason: 'Beverage giant with global presence', riskLevel: 'low', confidence: 0.75 },
+        { symbol: 'WMT', sector: 'Consumer', industry: 'Retail', reason: 'Retail leader with defensive characteristics', riskLevel: 'low', confidence: 0.75 },
+        { symbol: 'HD', sector: 'Consumer', industry: 'Home Improvement', reason: 'Home improvement leader with strong brand', riskLevel: 'low', confidence: 0.75 },
+        { symbol: 'MCD', sector: 'Consumer', industry: 'Restaurants', reason: 'Fast food leader with global reach', riskLevel: 'low', confidence: 0.75 },
+        { symbol: 'DIS', sector: 'Consumer', industry: 'Entertainment', reason: 'Entertainment giant with diverse revenue', riskLevel: 'low', confidence: 0.75 },
+        { symbol: 'PEP', sector: 'Consumer', industry: 'Beverages', reason: 'Beverage company with strong cash flow', riskLevel: 'low', confidence: 0.75 }
       ],
       medium: [
-        { symbol: 'GOOGL', sector: 'Technology', industry: 'Internet Services', reason: 'Market leader with consistent growth', riskLevel: 'medium', confidence: 0.8 },
+        { symbol: 'GOOGL', sector: 'Technology', industry: 'Internet Services', reason: 'Tech leader with advertising dominance', riskLevel: 'medium', confidence: 0.8 },
         { symbol: 'AMZN', sector: 'Consumer', industry: 'E-commerce', reason: 'E-commerce and cloud services leader', riskLevel: 'medium', confidence: 0.75 },
         { symbol: 'TSLA', sector: 'Consumer', industry: 'Automotive', reason: 'Electric vehicle and clean energy pioneer', riskLevel: 'medium', confidence: 0.7 },
         { symbol: 'NVDA', sector: 'Technology', industry: 'Semiconductors', reason: 'AI and gaming chip leader', riskLevel: 'medium', confidence: 0.75 },
-        { symbol: 'META', sector: 'Technology', industry: 'Social Media', reason: 'Social media and metaverse company', riskLevel: 'medium', confidence: 0.7 }
+        { symbol: 'META', sector: 'Technology', industry: 'Social Media', reason: 'Social media and metaverse company', riskLevel: 'medium', confidence: 0.7 },
+        { symbol: 'NFLX', sector: 'Consumer', industry: 'Entertainment', reason: 'Streaming entertainment leader', riskLevel: 'medium', confidence: 0.65 },
+        { symbol: 'CRM', sector: 'Technology', industry: 'Software', reason: 'Cloud software and customer relations', riskLevel: 'medium', confidence: 0.7 },
+        { symbol: 'ADBE', sector: 'Technology', industry: 'Software', reason: 'Creative software and digital media', riskLevel: 'medium', confidence: 0.7 },
+        { symbol: 'PYPL', sector: 'Technology', industry: 'Financial Technology', reason: 'Digital payments and fintech leader', riskLevel: 'medium', confidence: 0.7 },
+        { symbol: 'UBER', sector: 'Technology', industry: 'Transportation', reason: 'Ride-sharing and delivery platform', riskLevel: 'medium', confidence: 0.65 }
       ],
       high: [
         { symbol: 'AMD', sector: 'Technology', industry: 'Semiconductors', reason: 'Semiconductor company with growth potential', riskLevel: 'high', confidence: 0.7 },
         { symbol: 'SPOT', sector: 'Consumer', industry: 'Entertainment', reason: 'Music streaming with global expansion', riskLevel: 'high', confidence: 0.65 },
         { symbol: 'ZM', sector: 'Technology', industry: 'Software', reason: 'Video communications platform', riskLevel: 'high', confidence: 0.6 },
         { symbol: 'CRWD', sector: 'Technology', industry: 'Cybersecurity', reason: 'Cybersecurity with high growth', riskLevel: 'high', confidence: 0.65 },
-        { symbol: 'PLTR', sector: 'Technology', industry: 'Software', reason: 'Data analytics and AI platform', riskLevel: 'high', confidence: 0.6 }
+        { symbol: 'PLTR', sector: 'Technology', industry: 'Software', reason: 'Data analytics and AI platform', riskLevel: 'high', confidence: 0.6 },
+        { symbol: 'SNOW', sector: 'Technology', industry: 'Software', reason: 'Cloud data warehousing company', riskLevel: 'high', confidence: 0.6 },
+        { symbol: 'RBLX', sector: 'Technology', industry: 'Gaming', reason: 'Gaming and metaverse platform', riskLevel: 'high', confidence: 0.6 },
+        { symbol: 'SQ', sector: 'Technology', industry: 'Financial Technology', reason: 'Digital payments and fintech', riskLevel: 'high', confidence: 0.6 },
+        { symbol: 'SHOP', sector: 'Technology', industry: 'E-commerce', reason: 'E-commerce platform for businesses', riskLevel: 'high', confidence: 0.6 },
+        { symbol: 'TWLO', sector: 'Technology', industry: 'Software', reason: 'Cloud communications platform', riskLevel: 'high', confidence: 0.6 }
       ]
     };
 
-    return JSON.stringify(mockRecommendations[riskLevel] || mockRecommendations.medium);
+    const suitableStocks = recommendations[riskLevel] || recommendations.medium;
+    return suitableStocks.slice(0, maxRecommendations).map(stock => ({
+      ...stock,
+      riskLevel: stock.riskLevel || 'medium',
+      confidence: stock.confidence || 0.7,
+      marketCap: 'large',
+      growthPotential: riskLevel === 'high' ? 'high' : riskLevel === 'medium' ? 'medium' : 'low'
+    }));
   }
 
   // Helper methods for risk profile interpretation

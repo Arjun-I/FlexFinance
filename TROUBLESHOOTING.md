@@ -1,185 +1,170 @@
-# FlexFinance Android Troubleshooting Guide
+# FlexFinance Troubleshooting Guide
 
-## 🚨 Quick Start - If Your App is Crashing
+## Quick Fixes
 
-### Step 1: Run Enhanced Debug Mode
+### 1. LLM Not Working
+**Symptoms**: 
+- LLM features showing mock data
+- "No valid LLM API key configured" in console
+- Stock recommendations are generic
+
+**Solution**:
+1. Set up OpenAI API key in your `.env` file:
+   ```
+   EXPO_PUBLIC_OPENAI_API_KEY=sk-your-actual-openai-key-here
+   ```
+2. Get API key from: https://platform.openai.com/api-keys
+3. Restart the app after adding the key
+
+**Note**: The app works fine without LLM - it will use intelligent fallback recommendations.
+
+### 2. Swipe Limit Issues
+**Symptoms**:
+- App says you've used all swipes but you haven't
+- Swipe count not resetting daily
+- Confusing swipe limit messages
+
+**Solution**:
+- The app now has improved date tracking
+- Swipe count resets at midnight local time
+- Check the swipe interface for current count
+- If issues persist, try the "Reset Risk Profile" button in Dashboard
+
+### 3. Dashboard Overview Too Simple
+**Symptoms**:
+- Dashboard showing minimal information
+- Missing portfolio details
+- No risk profile breakdown
+
+**Solution**:
+- The detailed overview has been restored
+- You should now see comprehensive portfolio metrics
+- Risk profile details are displayed with explanations
+- Quick action buttons are available
+
+### 4. Stock Generation Failing
+**Symptoms**:
+- "Error generating stocks" messages
+- No stock recommendations
+- API timeout errors
+
+**Solution**:
+- The app now has robust fallback mechanisms
+- Yahoo Finance API is free but has rate limits
+- Mock data will be used when APIs are unavailable
+- Check your internet connection
+
+## Environment Setup
+
+### Required Configuration
+1. **Firebase** (Required):
+   ```
+   EXPO_PUBLIC_FIREBASE_API_KEY=your_key
+   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+   EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
+   ```
+
+2. **OpenAI** (Optional):
+   ```
+   EXPO_PUBLIC_OPENAI_API_KEY=sk-your-openai-key
+   ```
+
+3. **Yahoo Finance** (Free, no key needed):
+   ```
+   EXPO_PUBLIC_YAHOO_FINANCE_ENABLED=true
+   ```
+
+### Setup Commands
 ```bash
-npm run android-debug
-```
+# Quick setup
+npm run setup
 
-This will start the app with comprehensive logging and debugging enabled.
-
-### Step 2: Access Diagnostic Screen
-Once the app is running, navigate to the Diagnostic Screen to see detailed system information and logs.
-
-## 🔍 Common Android Crash Causes & Solutions
-
-### 1. Firebase Configuration Issues
-**Symptoms:** App crashes immediately on startup
-**Solution:**
-- Check that all Firebase config values are present in `firebase.js`
-- Verify your `google-services.json` file is in the correct location
-- Ensure Firebase project is properly set up
-
-### 2. Memory Issues
-**Symptoms:** App crashes after using for a while, especially with charts
-**Solution:**
-- The app now includes memory monitoring
-- Check the Diagnostic Screen for memory usage
-- Consider reducing chart complexity on Android
-
-### 3. Network Permission Issues
-**Symptoms:** App crashes when trying to fetch data
-**Solution:**
-- Verify internet permissions are granted
-- Check Android manifest permissions
-- Test with airplane mode on/off
-
-### 4. React Navigation Issues
-**Symptoms:** App crashes during navigation
-**Solution:**
-- Clear navigation cache: `npx expo start --clear`
-- Check for navigation state conflicts
-- Verify all screen components are properly exported
-
-### 5. Expo SDK Version Conflicts
-**Symptoms:** Various random crashes
-**Solution:**
-- Run `npx expo doctor` to check for issues
-- Update Expo SDK if needed
-- Clear all caches: `npx expo start --clear`
-
-## 🛠️ Debug Tools Available
-
-### 1. Enhanced Error Boundary
-- Catches and displays detailed error information
-- Shows stack traces in development mode
-- Provides retry functionality
-
-### 2. Debug Service
-- Comprehensive logging system
-- Tracks API calls, Firebase operations, navigation
-- Exports logs for analysis
-
-### 3. Diagnostic Screen
-- System information display
-- Real-time log monitoring
-- Issue detection and reporting
-- Performance monitoring
-
-## 📱 Android-Specific Optimizations
-
-### 1. Memory Management
-- Large heap enabled in app.config.js
-- Hermes JavaScript engine enabled
-- ProGuard disabled for debugging
-
-### 2. Performance Settings
-- Software keyboard layout mode set to 'pan'
-- Cleartext traffic allowed for development
-- Separate build per CPU architecture disabled
-
-### 3. Crash Prevention
-- Error boundaries on all major components
-- Try-catch blocks around Firebase operations
-- Graceful fallbacks for network failures
-
-## 🔧 Development Commands
-
-```bash
-# Start with enhanced debugging
-npm run android-debug
-
-# Clear all caches
-npm run clear-cache
-
-# Check for Expo issues
-npm run doctor
-
-# Standard Android start
-npm run android
-
-# Start development server
+# Start the app
 npm start
 ```
 
-## 📊 Log Analysis
+## API Status
 
-### Understanding Log Levels
-- **ERROR**: Critical issues that cause crashes
-- **WARN**: Potential issues that might cause problems
-- **INFO**: General app flow and operations
-- **DEBUG**: Detailed debugging information
+### Firebase
+- **Status**: Required for authentication and data storage
+- **Cost**: Free tier available
+- **Setup**: Create project at https://console.firebase.google.com
 
-### Common Error Patterns
-1. **Firebase Errors**: Check authentication and database permissions
-2. **Network Errors**: Verify internet connectivity and API endpoints
-3. **Memory Errors**: Look for memory leaks in components
-4. **Navigation Errors**: Check screen registration and props
+### OpenAI
+- **Status**: Optional for enhanced LLM features
+- **Cost**: Pay-per-use (very cheap for testing)
+- **Setup**: Get key at https://platform.openai.com/api-keys
 
-## 🚀 Production Deployment Checklist
+### Yahoo Finance
+- **Status**: Free API for stock data
+- **Cost**: Free (no key required)
+- **Limits**: Rate limited, app handles gracefully
 
-Before deploying to production:
+## Debug Information
 
-1. ✅ Run `npm run doctor` and fix any issues
-2. ✅ Test on multiple Android devices/versions
-3. ✅ Verify all Firebase configurations
-4. ✅ Check that all permissions are properly set
-5. ✅ Test network connectivity scenarios
-6. ✅ Verify error boundaries are working
-7. ✅ Test app in background/foreground transitions
+### Check API Status
+Use the LLM Test tab in the dashboard to:
+- Test API connectivity
+- Verify configuration
+- Check error messages
 
-## 📞 Getting Help
+### Console Logs
+Look for these indicators:
+- ✅ Success messages
+- ⚠️ Warning messages  
+- ❌ Error messages
+- 🔄 Processing messages
 
-If you're still experiencing crashes:
+### Common Error Messages
 
-1. **Collect Debug Information:**
-   - Run the app with `npm run android-debug`
-   - Navigate to Diagnostic Screen
-   - Export logs and system information
+**"No valid LLM API key configured"**
+- Solution: Add OpenAI API key to .env file
 
-2. **Check Common Issues:**
-   - Verify Android device compatibility
-   - Check for conflicting apps
-   - Test on a different device
+**"Daily swipe limit reached"**
+- Solution: Wait until tomorrow or reset risk profile
 
-3. **Environment Issues:**
-   - Update Expo CLI: `npm install -g @expo/cli`
-   - Clear all caches: `npx expo start --clear`
-   - Check Node.js version compatibility
+**"Failed to fetch stock data"**
+- Solution: Check internet connection, app will use fallback data
 
-## 🔄 Recovery Steps
+**"Firebase API key not configured"**
+- Solution: Add Firebase configuration to .env file
 
-If the app is completely unusable:
+## Platform-Specific Issues
 
-1. **Reset Development Environment:**
-   ```bash
-   rm -rf node_modules
-   npm install
-   npx expo start --clear
-   ```
+### Android
+- Some features are optimized for stability
+- LLM test tab is disabled on Android
+- Enhanced error handling for crashes
 
-2. **Check for Updates:**
-   ```bash
-   npx expo update
-   ```
+### iOS
+- Full feature support
+- All tabs available
+- Native performance optimizations
 
-3. **Verify Dependencies:**
-   ```bash
-   npm audit
-   npm outdated
-   ```
+## Performance Tips
 
-## 📈 Performance Monitoring
+1. **Clear Cache**: `npm run clear-cache`
+2. **Reset Project**: `npm run reset-project`
+3. **Check Dependencies**: `npm run doctor`
+4. **Lint Code**: `npm run lint`
 
-The app now includes:
-- Real-time memory usage monitoring
-- API call tracking
-- Navigation performance metrics
-- Firebase operation logging
+## Getting Help
 
-Access this information through the Diagnostic Screen in the app.
+1. Check the console logs for error messages
+2. Use the LLM Test tab to diagnose API issues
+3. Verify your .env file configuration
+4. Test on different devices/simulators
+5. Check the README.md for setup instructions
 
----
+## Recent Fixes Applied
 
-**Remember:** The enhanced debugging system will help identify the root cause of crashes. Always check the Diagnostic Screen first when experiencing issues. 
+- ✅ Improved swipe limit tracking with better date comparison
+- ✅ Restored detailed dashboard overview with portfolio metrics  
+- ✅ Enhanced LLM service with better error handling
+- ✅ Added robust fallback mechanisms for stock generation
+- ✅ Improved API error handling and user feedback
+- ✅ Added comprehensive logging for debugging
+- ✅ Created setup script for easy environment configuration 

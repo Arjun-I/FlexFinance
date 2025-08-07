@@ -16,10 +16,6 @@ export default {
     assetBundlePatterns: [
       '**/*'
     ],
-    ios: {
-      supportsTablet: true,
-      bundleIdentifier: 'com.flexfinance.app'
-    },
     android: {
       adaptiveIcon: {
         foregroundImage: './assets/flexlogo.png',
@@ -49,9 +45,7 @@ export default {
       // Prevent crashes from native modules
       enableDangerousExperimentalLeanBuilds: false,
       // Additional debugging
-      debuggable: true,
-      // Network security config for development
-      networkSecurityConfig: '@xml/network_security_config'
+      debuggable: true
     },
     web: {
       favicon: './assets/flexlogo.png',
@@ -68,6 +62,9 @@ export default {
       EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
       EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
       EXPO_PUBLIC_YAHOO_FINANCE_ENABLED: process.env.EXPO_PUBLIC_YAHOO_FINANCE_ENABLED || 'true',
+      eas: {
+        projectId: "1f7a1663-5908-4d6f-a3c1-03a0611900af"
+      }
     }
   }
 };
