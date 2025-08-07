@@ -8,7 +8,12 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "doctor": "expo doctor",
-    "clear-cache": "expo start --clear"
+    "clear-cache": "expo start --clear",
+    "debug": "node --experimental-modules debug/run-all-tests.mjs",
+    "debug:groq": "node --experimental-modules debug/test-groq.mjs",
+    "debug:finnhub": "node --experimental-modules debug/test-finnhub.mjs",
+    "debug:firebase": "node --experimental-modules debug/test-firebase.mjs",
+    "debug:generation": "node --experimental-modules debug/test-generation.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",

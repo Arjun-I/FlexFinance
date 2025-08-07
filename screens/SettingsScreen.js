@@ -270,6 +270,13 @@ export default function SettingsScreen({ navigation }) {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Actions</Text>
+          <TouchableOpacity 
+            style={styles.debugButton} 
+            onPress={() => navigation.navigate('DebugScreen')}
+          >
+            <Ionicons name="bug" size={20} color="#6366f1" />
+            <Text style={styles.debugButtonText}>Debug Panel</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.dangerButton} onPress={handleSignOut}>
             <Ionicons name="log-out" size={20} color="#ef4444" />
             <Text style={styles.dangerButtonText}>Sign Out</Text>
@@ -398,6 +405,22 @@ const styles = StyleSheet.create({
   settingSubtitle: {
     fontSize: 14,
     color: '#94a3b8',
+  },
+  debugButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#6366f1',
+  },
+  debugButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6366f1',
+    marginLeft: 12,
   },
   dangerButton: {
     flexDirection: 'row',

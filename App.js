@@ -15,6 +15,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import SupportScreen from './screens/SupportScreen';
 import TermsScreen from './screens/TermsScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
+import DebugScreen from './screens/DebugScreen';
 // Removed unused diagnostic and test screens
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -102,7 +103,7 @@ export default function App() {
       <NavigationContainer>
         <StatusBar style="light" />
         <Stack.Navigator
-          initialRouteName="Login"
+          initialRouteName={'Login'}
           screenOptions={{
             headerShown: false,
             gestureEnabled: false,
@@ -124,6 +125,12 @@ export default function App() {
           <Stack.Screen name="SupportScreen" component={SupportScreen} />
           <Stack.Screen name="TermsScreen" component={TermsScreen} />
           <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />
+          <Stack.Screen 
+            name="DebugScreen" 
+            component={({ navigation, route }) => (
+              <DebugScreen navigation={navigation} route={{ params: { user } }} />
+            )}
+          />
           {/* Removed DiagnosticScreen - not needed */}
         </Stack.Navigator>
       </NavigationContainer>

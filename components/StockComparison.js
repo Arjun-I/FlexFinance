@@ -18,8 +18,10 @@ export default function StockComparison({ navigation }) {
   const [stockPairs, setStockPairs] = useState([]);
   const [currentPairIndex, setCurrentPairIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [allPairsCompleted, setAllPairsCompleted] = useState(false);
 
   useEffect(() => {
+    console.log('🔄 StockComparison mounted/focused');
     loadStockPairs();
   }, []);
 
@@ -29,12 +31,56 @@ export default function StockComparison({ navigation }) {
       console.log('🔄 Loading stock pairs...');
       const pairs = await stockGenerationService.getStockPairs();
       setStockPairs(pairs);
-      setCurrentPairIndex(0);
+      
       console.log(`📊 Loaded ${pairs.length} stock pairs`);
       
       if (pairs.length === 0) {
         console.log('🔄 No stock pairs found, generating new ones...');
         await generateMoreStocks();
+      } else {
+        // Get user choices to filter out rejected stocks
+        const userChoices = await stockGenerationService.getUserChoices();
+        const rejectedSymbols = userChoices.rejectedStocks || [];
+        const likedSymbols = userChoices.likedStocks || [];
+        
+        // Filter out pairs that contain rejected stocks
+        const validPairs = pairs.filter(pair => {
+          const stock1Rejected = rejectedSymbols.includes(pair.stock1.symbol);
+          const stock2Rejected = rejectedSymbols.includes(pair.stock2.symbol);
+          return !stock1Rejected && !stock2Rejected;
+        });
+        
+        console.log(`🧹 Filtered ${pairs.length - validPairs.length} pairs containing rejected stocks`);
+        console.log(`📊 ${validPairs.length} valid pairs remaining`);
+        
+        setStockPairs(validPairs);
+        
+        if (validPairs.length === 0) {
+          console.log('🎯 No valid pairs remaining, showing generate more screen');
+          setCurrentPairIndex(0);
+          setAllPairsCompleted(true);
+        } else {
+          // Find first pair with stocks that haven't been chosen yet
+          let foundUnseenPair = false;
+          for (let i = 0; i < validPairs.length; i++) {
+            const pair = validPairs[i];
+            const stock1Liked = likedSymbols.includes(pair.stock1.symbol);
+            const stock2Liked = likedSymbols.includes(pair.stock2.symbol);
+            
+            // Show pair if at least one stock hasn't been liked yet
+            if (!stock1Liked || !stock2Liked) {
+              setCurrentPairIndex(i);
+              foundUnseenPair = true;
+              break;
+            }
+          }
+          
+          if (!foundUnseenPair) {
+            // All valid pairs have been seen, show generate more
+            setCurrentPairIndex(validPairs.length);
+            setAllPairsCompleted(true);
+          }
+        }
       }
     } catch (error) {
       console.error('❌ Error loading stock pairs:', error);
@@ -46,19 +92,24 @@ export default function StockComparison({ navigation }) {
 
   const handleChoice = async (symbol, choice, stockData) => {
     try {
+      console.log(`📝 Handling choice: ${symbol} = ${choice} (pair ${currentPairIndex + 1}/${stockPairs.length})`);
+      
       // Record user choice for LLM learning
       await stockGenerationService.recordUserChoice(symbol, choice, stockData);
       
-      // Move to next pair
-      if (currentPairIndex < stockPairs.length - 1) {
-        setCurrentPairIndex(currentPairIndex + 1);
+      // Always move to next pair immediately after choice
+      const nextPairIndex = currentPairIndex + 1;
+      
+      if (nextPairIndex >= stockPairs.length) {
+        console.log('🎯 Completed all pairs, showing generate more screen...');
+        // Set to an invalid index to show the "Generate More" screen
+        setCurrentPairIndex(stockPairs.length);
+        setAllPairsCompleted(true);
+        // Don't auto-generate, let user click the button
       } else {
-        // Generate more stocks when we run out
-        Alert.alert(
-          'Great job!',
-          'You\'ve reviewed all current recommendations. Generating more stocks for you...',
-          [{ text: 'OK', onPress: () => generateMoreStocks() }]
-        );
+        // Move to next pair
+        console.log(`➡️ Moving to pair ${nextPairIndex + 1}`);
+        setCurrentPairIndex(nextPairIndex);
       }
     } catch (error) {
       console.error('❌ Error recording choice:', error);
@@ -68,9 +119,18 @@ export default function StockComparison({ navigation }) {
   const generateMoreStocks = async () => {
     try {
       setLoading(true);
-      console.log('🔄 Generating more stock recommendations...');
+      console.log('🔄 Generating fresh stock recommendations...');
+      
+      // Clear old recommendations to prevent repeats
+      await stockGenerationService.clearAllStocks();
+      console.log('🧹 Cleared old recommendations');
+      
+      // Generate new personalized recommendations
       await stockGenerationService.generatePersonalizedStocks(10);
-      console.log('✅ Generated more stocks successfully');
+      console.log('✅ Generated fresh stocks successfully');
+      
+      // Reload pairs and reset completion state
+      setAllPairsCompleted(false);
       await loadStockPairs();
       setCurrentPairIndex(0);
     } catch (error) {
@@ -129,12 +189,12 @@ export default function StockComparison({ navigation }) {
     );
   }
 
-  if (!currentPair) {
+  if (!currentPair || currentPairIndex >= stockPairs.length) {
     return (
       <View style={styles.emptyContainer}>
         <Ionicons name="trending-up" size={60} color="#6366f1" />
-        <Text style={styles.emptyTitle}>No More Stocks</Text>
-        <Text style={styles.emptySubtitle}>You've reviewed all current recommendations</Text>
+        <Text style={styles.emptyTitle}>All Pairs Completed!</Text>
+        <Text style={styles.emptySubtitle}>Ready to generate fresh recommendations</Text>
         <TouchableOpacity style={styles.generateButton} onPress={generateMoreStocks}>
           <Text style={styles.generateButtonText}>Generate More</Text>
         </TouchableOpacity>

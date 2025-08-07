@@ -77,6 +77,7 @@ export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
     ethics: 0,
   });
   const [showResults, setShowResults] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Reset quiz state when component mounts (for reset functionality)
   useEffect(() => {
@@ -111,6 +112,8 @@ export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
     const user = auth.currentUser;
     if (user) {
       try {
+        setSubmitting(true);
+        
         // Save detailed risk profile
         console.log('🔄 Saving detailed risk profile...');
         await riskProfileService.saveRiskProfile(categoryScores);
@@ -144,6 +147,8 @@ export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
       } catch (err) {
         console.error('Error saving risk profile:', err);
         Alert.alert('Error', 'Failed to save risk profile. Please try again.');
+      } finally {
+        setSubmitting(false);
       }
     }
   };
@@ -158,9 +163,22 @@ export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
           <>
             <Ionicons name="trophy" size={60} color="#10b981" />
             <Text style={styles.title}>Quiz Complete!</Text>
-            <Text style={styles.subtitle}>Risk profile saved successfully</Text>
-            <TouchableOpacity style={styles.button} onPress={handleFinish}>
-              <Text style={styles.buttonText}>Continue</Text>
+            <Text style={styles.subtitle}>
+              {submitting ? 'Generating your personalized stock recommendations...' : 'Risk profile saved successfully'}
+            </Text>
+            <TouchableOpacity 
+              style={[styles.button, submitting && styles.buttonDisabled]} 
+              onPress={handleFinish}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <View style={styles.buttonContent}>
+                  <Ionicons name="refresh" size={16} color="#ffffff" style={{ marginRight: 8 }} />
+                  <Text style={styles.buttonText}>Generating stocks...</Text>
+                </View>
+              ) : (
+                <Text style={styles.buttonText}>Continue</Text>
+              )}
             </TouchableOpacity>
           </>
         ) : (
@@ -258,6 +276,16 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 30,
     borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonDisabled: {
+    backgroundColor: '#64748b',
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   scrollContainer: { paddingBottom: 50 },

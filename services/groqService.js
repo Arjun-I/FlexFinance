@@ -73,54 +73,132 @@ class GroqService {
     }
   }
 
-  async getRecommendations(maxRecommendations = 10) {
-    const prompt = `Generate ${maxRecommendations} stock recommendations for an investor with moderate risk tolerance.
+  getContextSnippet(context = {}) {
+    try {
+      const risk = context?.riskProfile || {};
+      const prefs = context?.userPreferences || {};
+      const liked = (prefs.likedStocks || []).slice(0, 10).join(', ');
+      const rejected = (prefs.rejectedStocks || []).slice(0, 10).join(', ');
+      const portfolio = (prefs.portfolio || []).map(p => `${p.symbol}:${p.shares}`).slice(0, 10).join(', ');
 
-Return a JSON array with exactly ${maxRecommendations} objects:
+      return `
+User Context:
+- Risk Volatility: ${risk.volatility ?? 'n/a'} (lower=conservative, higher=aggressive)
+- Time Horizon: ${risk.timeHorizon ?? 'n/a'}
+- Knowledge: ${risk.knowledge ?? 'n/a'}
+- Ethics: ${risk.ethics ?? 'n/a'}
+- Liquidity: ${risk.liquidity ?? 'n/a'}
+- Liked Stocks: ${liked || 'none'}
+- Rejected Stocks: ${rejected || 'none'}
+- Current Portfolio: ${portfolio || 'none'}
+
+Instructions: Tailor recommendations to the risk profile. If volatility is low, favor large-cap, dividend, defensive sectors. If high, allow more growth/volatility. Avoid sectors implied by rejections. Diversify across sectors.
+`;
+    } catch {
+      return '';
+    }
+  }
+
+  async getRecommendations(maxRecommendations = 10, context = {}) {
+    const contextSnippet = this.getContextSnippet(context);
+    
+    // Add exclusion list for rejected stocks
+    const rejectedStocks = context.rejectedStocks || [];
+    const likedStocks = context.likedStocks || [];
+    
+    let exclusionText = '';
+    if (rejectedStocks.length > 0) {
+      exclusionText += `\n\nIMPORTANT EXCLUSIONS - NEVER recommend these stocks that the user has rejected: ${rejectedStocks.join(', ')}`;
+    }
+    if (likedStocks.length > 0) {
+      exclusionText += `\n\nUser has already liked these stocks (avoid duplicates): ${likedStocks.join(', ')}`;
+    }
+    
+    const prompt = `Generate ${maxRecommendations} stock recommendations for the user below.
+${contextSnippet}${exclusionText}
+
+Return ONLY a JSON array with exactly ${maxRecommendations} objects. Include accurate market cap estimates:
 [
   {
-    "symbol": "STOCK_SYMBOL",
-    "name": "Company Name", 
+    "symbol": "AAPL",
+    "name": "Apple Inc", 
     "sector": "Technology",
-    "industry": "Software",
-    "reason": "Brief reason for recommendation",
-    "analysis": "Brief analysis",
-    "riskLevel": "medium",
-    "confidence": 0.7,
+    "industry": "Consumer Electronics",
+    "reason": "Brief reason for this user's risk profile",
+    "analysis": "Short analysis",
+    "riskLevel": "low",
+    "confidence": 0.8,
     "marketCap": "large",
+    "marketCapBillions": 3000,
     "growthPotential": "medium",
-    "investmentHorizon": "medium-term",
-    "keyRisks": ["Market risk", "Sector risk"],
-    "keyBenefits": ["Growth potential", "Strong fundamentals"],
-    "targetPrice": "$100.00",
-    "dividendYield": "2.5%",
+    "investmentHorizon": "long-term",
+    "keyRisks": ["Risk1", "Risk2"],
+    "keyBenefits": ["Benefit1", "Benefit2"],
+    "targetPrice": "$200.00",
+    "dividendYield": "1.5%",
     "recommendation": "buy"
   }
-]`;
+]
 
-    const response = await this.callLLM(prompt);
+CRITICAL: Never include stocks from the exclusion list above. Generate completely different alternatives if needed.`;
+
+    const response = await this.callLLM(prompt, 2000); // Increased token limit
     return this.parseRecommendations(response);
   }
 
   parseRecommendations(response) {
     try {
-      // Extract JSON from response
-      const jsonMatch = response.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) {
-        throw new Error('No JSON array found in response');
+      // Clean the response and extract JSON
+      let jsonString = response.trim();
+      
+      // Remove common prefixes
+      jsonString = jsonString.replace(/^.*?(?=\[)/s, '');
+      
+      // Find the JSON array bounds more carefully
+      const startIdx = jsonString.indexOf('[');
+      const lastIdx = jsonString.lastIndexOf(']');
+      
+      if (startIdx === -1 || lastIdx === -1 || startIdx >= lastIdx) {
+        throw new Error('No valid JSON array found in response');
       }
-
-      const recommendations = JSON.parse(jsonMatch[0]);
+      
+      jsonString = jsonString.substring(startIdx, lastIdx + 1);
+      
+      console.log('🔍 Extracted JSON string preview:', jsonString.substring(0, 200) + '...');
+      
+      const recommendations = JSON.parse(jsonString);
       
       if (!Array.isArray(recommendations)) {
-        throw new Error('Response is not an array');
+        throw new Error('Parsed result is not an array');
       }
 
       console.log(`✅ Parsed ${recommendations.length} recommendations from Groq`);
       return recommendations;
     } catch (error) {
       console.error('❌ Error parsing Groq recommendations:', error);
-      console.error('📝 Raw response:', response);
+      console.error('📝 Raw response length:', response.length);
+      console.error('📝 Raw response preview:', response.substring(0, 500));
+      
+      // Try to find specific JSON issues
+      if (error instanceof SyntaxError) {
+        console.error('🔍 JSON Syntax Error - likely malformed JSON');
+        
+        // Try to find the JSON part and show parsing issues
+        const match = response.match(/\[[\s\S]*\]/);
+        if (match) {
+          const jsonPart = match[0];
+          console.error('📝 Extracted JSON part:', jsonPart.substring(0, 300) + '...');
+          
+          // Check for common JSON issues
+          if (jsonPart.includes('...')) {
+            console.error('🔍 Found truncation ("...") in JSON - response was cut off');
+          }
+          if (jsonPart.match(/,\s*[}\]]/)) {
+            console.error('🔍 Found trailing commas in JSON');
+          }
+        }
+      }
+      
       throw new Error('Failed to parse LLM recommendations');
     }
   }

@@ -131,7 +131,7 @@ export default function PaperTrading() {
       if (data.length > 0) {
         const symbols = data.map(stock => stock.symbol);
         try {
-          const { quotes } = await getMultipleQuotes(symbols, userId, data.length);
+          const quotes = await getMultipleQuotes(symbols);
           
           data.forEach(stock => {
             const quote = quotes.find(q => q.symbol === stock.symbol);
@@ -228,16 +228,23 @@ export default function PaperTrading() {
         });
 
         // Update cash balance
+        const nextCash = cash - totalCost;
         await updateDoc(doc(db, 'users', user.uid), {
-          cashBalance: cash - totalCost
+          cashBalance: nextCash
         });
 
-        setCash(cash - totalCost);
-        setPortfolio(prev => prev.map(stock => 
+        const nextPortfolio = portfolio.map(stock => 
           stock.id === existingStock.id 
             ? { ...stock, shares: newShares, totalCost: newTotalCost, averagePrice: newAveragePrice }
             : stock
-        ));
+        );
+
+        setCash(nextCash);
+        setPortfolio(nextPortfolio);
+
+        // Recompute with updated portfolio
+        buildIndustryData(nextPortfolio);
+        await buildValueHistory(nextPortfolio, user.uid, nextCash);
       } else {
         // Add new stock
         const newStock = {
@@ -254,21 +261,27 @@ export default function PaperTrading() {
         const docRef = await addDoc(collection(db, 'users', user.uid, 'portfolio'), newStock);
         
         // Update cash balance
+        const nextCash = cash - totalCost;
         await updateDoc(doc(db, 'users', user.uid), {
-          cashBalance: cash - totalCost
+          cashBalance: nextCash
         });
 
-        setCash(cash - totalCost);
-        setPortfolio(prev => [...prev, { id: docRef.id, ...newStock }]);
+        const nextPortfolio = [...portfolio, { id: docRef.id, ...newStock }];
+
+        setCash(nextCash);
+        setPortfolio(nextPortfolio);
+
+        // Recompute with updated portfolio
+        buildIndustryData(nextPortfolio);
+        await buildValueHistory(nextPortfolio, user.uid, nextCash);
       }
 
       setTicker('');
       setShares('');
       Alert.alert('Success', `Bought ${sharesNum} shares of ${upperTicker} at $${price.toFixed(2)}`);
-      
-      // Refresh portfolio data
-      buildIndustryData(portfolio);
-      await buildValueHistory(portfolio, user.uid, cash - totalCost);
+
+      // Removed stale-state recomputations
+
     } catch (error) {
       console.error('Error buying stock:', error);
       Alert.alert('Error', 'Failed to buy stock. Please try again.');
@@ -325,6 +338,51 @@ export default function PaperTrading() {
     }
   };
 
+  const renderPortfolioItem = ({ item }) => {
+    const currentPrice = item.currentPrice || item.price || item.averagePrice || 0;
+    const change = currentPrice - (item.averagePrice || 0);
+    const changePercent = item.averagePrice ? (change / item.averagePrice) * 100 : 0;
+    const totalValue = item.shares * currentPrice;
+
+    return (
+      <View key={item.id || item.symbol} style={styles.portfolioItem}>
+        <View style={styles.stockInfo}>
+          <Text style={styles.symbol}>{item.symbol}</Text>
+          <Text style={styles.shares}>{item.shares} shares</Text>
+          <Text style={styles.avgPrice}>Avg: ${(item.averagePrice || 0).toFixed(2)}</Text>
+        </View>
+        
+        <View style={styles.priceInfo}>
+          <Text style={styles.currentValue}>${currentPrice.toFixed(2)}</Text>
+          <Text style={[styles.totalValue, { color: change >= 0 ? '#10b981' : '#ef4444' }]}>
+            ${totalValue.toFixed(2)} ({changePercent >= 0 ? '+' : ''}{changePercent.toFixed(1)}%)
+          </Text>
+        </View>
+        
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => {
+              setEditingStock(item);
+              setEditShares('1');
+            }}
+          >
+            <Ionicons name="add-circle" size={16} color="#10b981" />
+          </TouchableOpacity>
+          
+          {item.shares > 0 && (
+            <TouchableOpacity
+              style={styles.sellButton}
+              onPress={() => sellStock(item)}
+            >
+              <Ionicons name="remove-circle" size={16} color="#ef4444" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+  };
+
   const sellStock = async (stock) => {
     const user = auth.currentUser;
     if (!user) {
@@ -355,50 +413,7 @@ export default function PaperTrading() {
     }
   };
 
-  const renderPortfolioItem = ({ item }) => {
-    const currentPrice = item.currentPrice || item.averagePrice || 100;
-    const currentValue = item.shares * currentPrice;
-    const profitLoss = currentValue - item.totalCost;
-    const profitLossPercent = ((profitLoss / item.totalCost) * 100) || 0;
 
-    return (
-      <View style={styles.portfolioItem}>
-        <View style={styles.stockInfo}>
-          <Text style={styles.symbol}>{item.symbol}</Text>
-          <Text style={styles.shares}>{item.shares} shares @ ${item.averagePrice?.toFixed(2) || '0.00'}</Text>
-          <Text style={styles.industry}>{item.industry || 'Unknown'}</Text>
-        </View>
-        
-        <View style={styles.priceInfo}>
-          <Text style={styles.currentValue}>
-            ${currentValue.toFixed(2)}
-          </Text>
-          <Text style={[styles.profitLoss, { color: profitLoss >= 0 ? '#10b981' : '#ef4444' }]}>
-            {profitLoss >= 0 ? '+' : ''}{profitLoss.toFixed(2)} ({profitLossPercent.toFixed(1)}%)
-          </Text>
-        </View>
-        
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={styles.buyMoreButton}
-            onPress={() => {
-              setEditingStock(item);
-              setEditShares('');
-            }}
-          >
-            <Ionicons name="add-circle" size={20} color="#10b981" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={styles.sellButton}
-            onPress={() => sellStock(item)}
-          >
-            <Ionicons name="remove-circle" size={20} color="#ef4444" />
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
 
   const renderBuySellModal = () => {
     if (!editingStock) return null;
@@ -443,7 +458,7 @@ export default function PaperTrading() {
                 }
               }}
             >
-              <Text style={styles.modalButtonText}>Buy More</Text>
+              <Text style={styles.modalButtonText}>{editingStock.shares === 0 ? 'Buy' : 'Buy More'}</Text>
             </TouchableOpacity>
             
             <TouchableOpacity
@@ -882,6 +897,7 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: '#1e293b',
     borderRadius: 6,
+    marginRight: 8,
   },
   sellButton: {
     padding: 8,

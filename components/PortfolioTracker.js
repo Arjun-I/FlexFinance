@@ -7,9 +7,14 @@ import {
   TouchableOpacity,
   ScrollView,
   RefreshControl,
+  Alert,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getStockQuote, getMultipleQuotes } from '../services/finnhubService';
+import { auth, db } from '../firebase';
+import { doc, updateDoc, collection, getDocs, deleteDoc, addDoc } from 'firebase/firestore';
 
 export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, onPortfolioValueChange }) {
   const [holdings, setHoldings] = useState([]);
@@ -17,6 +22,8 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
   const [totalValue, setTotalValue] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [tradingStock, setTradingStock] = useState(null);
+  const [tradeAmount, setTradeAmount] = useState('');
 
   useEffect(() => {
     updatePortfolioData();
@@ -40,16 +47,20 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
         const quote = quotes.find(q => q.symbol === holding.symbol);
         const currentPrice = quote ? quote.price : holding.averagePrice || 0;
         const currentValue = holding.shares * currentPrice;
-        const change = currentPrice - (holding.averagePrice || 0);
-        const changePercent = holding.averagePrice ? (change / holding.averagePrice) * 100 : 0;
+        const changeAbsolute = quote && typeof quote.previousClose === 'number'
+          ? currentPrice - quote.previousClose
+          : currentPrice - (holding.averagePrice || 0);
+        const changePercent = quote && typeof quote.previousClose === 'number' && quote.previousClose > 0
+          ? (changeAbsolute / quote.previousClose) * 100
+          : (holding.averagePrice ? ((currentPrice - holding.averagePrice) / holding.averagePrice) * 100 : 0);
 
         return {
           ...holding,
           currentPrice,
           currentValue,
-          change,
+          change: changeAbsolute,
           changePercent,
-          changeFormatted: `${change >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`,
+          changeFormatted: `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`,
         };
       });
 
@@ -103,6 +114,127 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
       return percentage;
     }
     return `${percentage >= 0 ? '+' : ''}${percentage.toFixed(2)}%`;
+  };
+
+  const openTradeModal = (holding, action) => {
+    setTradingStock({ ...holding, action });
+    setTradeAmount('');
+  };
+
+  const executeTrading = async () => {
+    if (!tradingStock || !tradeAmount) {
+      Alert.alert('Error', 'Please enter a valid amount');
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert('Error', 'Please log in to trade');
+      return;
+    }
+
+    try {
+      const shares = parseInt(tradeAmount);
+      if (isNaN(shares) || shares <= 0) {
+        Alert.alert('Error', 'Please enter a valid number of shares');
+        return;
+      }
+
+      const currentPrice = await getStockQuote(tradingStock.symbol);
+      const price = currentPrice.price;
+      const totalCost = shares * price;
+
+      if (tradingStock.action === 'buy') {
+        // Buy logic
+        if (totalCost > cashBalance) {
+          Alert.alert('Error', 'Insufficient funds');
+          return;
+        }
+
+        const portfolioRef = collection(db, 'users', user.uid, 'portfolio');
+        const portfolioSnap = await getDocs(portfolioRef);
+        const existingPosition = portfolioSnap.docs.find(doc => doc.data().symbol === tradingStock.symbol);
+
+        if (existingPosition) {
+          // Update existing position
+          const existingData = existingPosition.data();
+          const newShares = existingData.shares + shares;
+          const newTotalCost = existingData.totalCost + totalCost;
+          const newAveragePrice = newTotalCost / newShares;
+
+          await updateDoc(existingPosition.ref, {
+            shares: newShares,
+            totalCost: newTotalCost,
+            averagePrice: newAveragePrice,
+            lastUpdated: new Date().toISOString()
+          });
+        } else {
+          // Create new position
+          await addDoc(portfolioRef, {
+            symbol: tradingStock.symbol,
+            name: tradingStock.name || tradingStock.symbol,
+            shares: shares,
+            averagePrice: price,
+            totalCost: totalCost,
+            sector: tradingStock.sector || 'Unknown',
+            industry: tradingStock.industry || 'Unknown',
+            purchaseDate: new Date().toISOString(),
+            lastUpdated: new Date().toISOString()
+          });
+        }
+
+        // Update cash balance
+        await updateDoc(doc(db, 'users', user.uid), {
+          cashBalance: cashBalance - totalCost
+        });
+
+        Alert.alert('Success', `Bought ${shares} shares of ${tradingStock.symbol} at $${price.toFixed(2)}`);
+      } else if (tradingStock.action === 'sell') {
+        // Sell logic
+        if (shares > tradingStock.shares) {
+          Alert.alert('Error', `You only have ${tradingStock.shares} shares to sell`);
+          return;
+        }
+
+        const portfolioRef = collection(db, 'users', user.uid, 'portfolio');
+        const portfolioSnap = await getDocs(portfolioRef);
+        const existingPosition = portfolioSnap.docs.find(doc => doc.data().symbol === tradingStock.symbol);
+
+        if (existingPosition) {
+          const existingData = existingPosition.data();
+          const newShares = existingData.shares - shares;
+          const soldValue = shares * price;
+
+          if (newShares === 0) {
+            // Delete position entirely
+            await deleteDoc(existingPosition.ref);
+          } else {
+            // Update position
+            const newTotalCost = existingData.totalCost - (shares * existingData.averagePrice);
+            await updateDoc(existingPosition.ref, {
+              shares: newShares,
+              totalCost: newTotalCost,
+              lastUpdated: new Date().toISOString()
+            });
+          }
+
+          // Update cash balance
+          await updateDoc(doc(db, 'users', user.uid), {
+            cashBalance: cashBalance + soldValue
+          });
+
+          const profit = soldValue - (shares * existingData.averagePrice);
+          Alert.alert('Success', `Sold ${shares} shares of ${tradingStock.symbol} for $${soldValue.toFixed(2)} (${profit >= 0 ? '+' : ''}$${profit.toFixed(2)})`);
+        }
+      }
+
+      setTradingStock(null);
+      setTradeAmount('');
+      if (onRefresh) onRefresh();
+    } catch (error) {
+      console.error('Trading error:', error);
+      Alert.alert('Error', 'Failed to execute trade. Please try again.');
+    }
   };
 
   return (
@@ -204,6 +336,27 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
                     {formatCurrency(holding.change * holding.shares)}
                   </Text>
                 </View>
+                
+                {/* Buy/Sell Actions */}
+                <View style={styles.actionsRow}>
+                  <TouchableOpacity 
+                    style={styles.buyButton}
+                    onPress={() => openTradeModal(holding, 'buy')}
+                  >
+                    <Ionicons name="add-circle" size={16} color="#ffffff" />
+                    <Text style={styles.actionButtonText}>Buy</Text>
+                  </TouchableOpacity>
+                  
+                  {holding.shares > 0 && (
+                    <TouchableOpacity 
+                      style={styles.sellButton}
+                      onPress={() => openTradeModal(holding, 'sell')}
+                    >
+                      <Ionicons name="remove-circle" size={16} color="#ffffff" />
+                      <Text style={styles.actionButtonText}>Sell</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             </View>
           ))}
@@ -217,6 +370,63 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
           </Text>
         </View>
       )}
+
+      {/* Trading Modal */}
+      <Modal
+        visible={tradingStock !== null}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setTradingStock(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              {tradingStock?.action === 'buy' ? 'Buy' : 'Sell'} {tradingStock?.symbol}
+            </Text>
+            
+            <View style={styles.modalInfo}>
+              <Text style={styles.modalInfoText}>
+                Current Price: ${tradingStock ? formatCurrency(tradingStock.currentPrice || 0) : '0.00'}
+              </Text>
+              <Text style={styles.modalInfoText}>
+                Available Cash: ${formatCurrency(cashBalance || 0)}
+              </Text>
+              {tradingStock?.action === 'sell' && (
+                <Text style={styles.modalInfoText}>
+                  You Own: {tradingStock.shares} shares
+                </Text>
+              )}
+            </View>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Number of shares"
+              value={tradeAmount}
+              onChangeText={setTradeAmount}
+              keyboardType="numeric"
+              placeholderTextColor="#94a3b8"
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={executeTrading}
+              >
+                <Text style={styles.modalButtonText}>
+                  {tradingStock?.action === 'buy' ? 'Buy' : 'Sell'}
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setTradingStock(null)}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -390,5 +600,97 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     marginTop: 8,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#374151',
+  },
+  buyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10b981',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    flex: 1,
+    marginRight: 8,
+    justifyContent: 'center',
+  },
+  sellButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ef4444',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    flex: 1,
+    marginLeft: 8,
+    justifyContent: 'center',
+  },
+  actionButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 20,
+    width: '85%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  modalInfo: {
+    marginBottom: 16,
+  },
+  modalInfoText: {
+    fontSize: 14,
+    color: '#94a3b8',
+    marginBottom: 4,
+  },
+  modalInput: {
+    backgroundColor: '#334155',
+    color: '#ffffff',
+    padding: 12,
+    borderRadius: 8,
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    backgroundColor: '#10b981',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#ef4444',
+  },
+  modalButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 
