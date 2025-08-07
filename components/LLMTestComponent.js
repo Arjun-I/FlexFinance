@@ -166,7 +166,7 @@ export default function LLMTestComponent() {
     try {
       // Test OpenAI API
       results.push('🔄 Testing OpenAI API connectivity...');
-      const openaiKey = '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';
+      const openaiKey = Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY || process.env.EXPO_PUBLIC_OPENAI_API_KEY;
       if (openaiKey && openaiKey !== 'sk-placeholder-key' && openaiKey !== 'sk-your-actual-openai-key-here' && !openaiKey.includes('placeholder')) {
         results.push('✅ OpenAI API key configured (4o mini model)');
       } else {
@@ -266,7 +266,7 @@ export default function LLMTestComponent() {
       
       // Test 1: API Configuration
       results.push('🔄 Testing API configuration...');
-      const openaiKey = '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';
+      const openaiKey = Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY || process.env.EXPO_PUBLIC_OPENAI_API_KEY;
       if (openaiKey && openaiKey !== 'sk-placeholder-key') {
         results.push('✅ OpenAI API key configured');
       } else {

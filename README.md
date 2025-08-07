@@ -38,19 +38,19 @@ A React Native app for personalized stock recommendations and portfolio manageme
 
 2. **Environment Configuration**
    Create a `.env` file in the root directory with your API keys:
-   ```
-   # Firebase Configuration (Required)
-   EXPO_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key_here
-   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-   EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
-   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-   EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
+   ```bash
+   # Firebase Configuration
+   EXPO_PUBLIC_FIREBASE_API_KEY=AIzaSyDXvcgkEF1476JRFlafgPxK1HaqBbX9lP8
+   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=flexfinance-20c90.firebaseapp.com
+   EXPO_PUBLIC_FIREBASE_PROJECT_ID=flexfinance-20c90
+   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=flexfinance-20c90.appspot.com
+   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=517568675166
+   EXPO_PUBLIC_FIREBASE_APP_ID=1:517568675166:android:0ece24a5eea74357df23cf
 
-   # OpenAI API Key for LLM Integration (Configured)
-   EXPO_PUBLIC_OPENAI_API_KEY=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
+   # OpenAI API Key for LLM Integration
+   EXPO_PUBLIC_OPENAI_API_KEY=your_openai_api_key_here
 
-   # Yahoo Finance API (Free, no key required)
+   # Yahoo Finance API (Free, no key required for basic stock data)
    EXPO_PUBLIC_YAHOO_FINANCE_ENABLED=true
    ```
 

@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 
 // Mock LLM API endpoint (replace with actual LLM service)
 const LLM_API_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
-const LLM_API_KEY = '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';
+const LLM_API_KEY = Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY || process.env.EXPO_PUBLIC_OPENAI_API_KEY;
 
 class LLMService {
   constructor() {
