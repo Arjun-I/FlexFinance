@@ -8,15 +8,12 @@ import Constants from 'expo-constants';
 const LLM_API_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 const LLM_API_KEY = Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY || process.env.EXPO_PUBLIC_OPENAI_API_KEY;
 
-// Debug API key loading
+// Debug API key loading (without exposing key details)
 console.log('🔑 LLM API Key Debug:', {
   hasKey: !!LLM_API_KEY,
   keyLength: LLM_API_KEY ? LLM_API_KEY.length : 0,
-  keyStart: LLM_API_KEY ? LLM_API_KEY.substring(0, 10) + '...' : 'none',
   fromExtra: !!Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY,
-  fromEnv: !!process.env.EXPO_PUBLIC_OPENAI_API_KEY,
-  extraKeys: Object.keys(Constants.expoConfig?.extra || {}),
-  envKeys: Object.keys(process.env).filter(k => k.includes('OPENAI'))
+  fromEnv: !!process.env.EXPO_PUBLIC_OPENAI_API_KEY
 });
 
 class LLMService {
@@ -92,77 +89,58 @@ class LLMService {
       const parsed = this.parseRecommendations(recommendations, maxRecommendations);
       console.log('🤖 LLM Service: Parsed recommendations:', parsed.length);
       
+      if (!parsed || parsed.length === 0) {
+        console.error('❌ No recommendations parsed from LLM response');
+        throw new Error('LLM failed to generate valid recommendations. Please try again.');
+      }
+      
       return parsed;
     } catch (error) {
       console.error('❌ LLM Service Error getting recommendations:', error);
-      console.log('🤖 LLM Service: Using fallback recommendations...');
-      return this.getFallbackRecommendations(maxRecommendations);
+      console.log('❌ LLM Service: No recommendations generated');
+      throw new Error('LLM failed to generate recommendations. Please try again.');
     }
   }
 
-  // Build context-aware prompt for LLM
+  // Build context-aware prompt for LLM with learning
   buildRecommendationPrompt(maxRecommendations) {
     const riskProfile = this.riskProfile;
     const likedStocks = this.userPreferences.likedStocks;
-    const rejectedStocks = this.rejectedStocks;
+    const rejectedStocks = this.userPreferences.rejectedStocks || [];
     const portfolio = this.userPreferences.portfolio;
 
     console.log('📊 Building prompt with risk profile:', riskProfile);
     console.log('📊 Risk tolerance:', this.getRiskLevel(riskProfile.volatility));
     console.log('📊 Investment horizon:', this.getTimeHorizon(riskProfile.timeHorizon));
+    console.log('📊 Learning from choices - Liked:', likedStocks.length, 'Rejected:', rejectedStocks.length);
 
     return `
-You are an expert financial advisor providing personalized stock recommendations for investment purposes.
+Generate ${maxRecommendations} stock recommendations for an investor with risk tolerance: ${this.getRiskLevel(riskProfile.volatility)}.
 
-INVESTMENT CONTEXT:
-- User's Risk Tolerance: ${this.getRiskLevel(riskProfile.volatility)}
-- Investment Horizon: ${this.getTimeHorizon(riskProfile.timeHorizon)}
-- Investment Knowledge: ${this.getKnowledgeLevel(riskProfile.knowledge)}
-- Current Cash Available: $${this.userPreferences.cashBalance.toLocaleString()}
-- Portfolio Value: $${this.userPreferences.portfolio.reduce((sum, p) => sum + (p.shares * p.averagePrice), 0).toLocaleString()}
-
-USER PREFERENCES:
-- Previously Liked Stocks: ${likedStocks.map(s => s.symbol).join(', ') || 'None'}
-- Previously Rejected Stocks: ${rejectedStocks.map(s => s.symbol).join(', ') || 'None'}
-- Current Portfolio Holdings: ${portfolio.map(p => `${p.shares}x ${p.ticker}`).join(', ') || 'Empty'}
-
-INVESTMENT REQUIREMENTS:
-Generate exactly ${maxRecommendations} stock recommendations that are suitable for this investor to consider for investment. Each recommendation must include:
-
-1. **Stock Analysis**: Detailed analysis of why this stock fits the user's profile
-2. **Investment Thesis**: Clear reasoning for why this stock is a good investment
-3. **Risk Assessment**: Specific risks and how they align with user's risk tolerance
-4. **Growth Potential**: Expected growth drivers and timeline
-5. **Portfolio Fit**: How this stock diversifies their current holdings
-
-IMPORTANT INVESTMENT CRITERIA:
-- Diversify across different sectors (Technology, Healthcare, Finance, Consumer, Energy, Industrial, etc.)
-- Consider market capitalization (large, mid, small cap)
-- Factor in current market conditions and trends
-- Avoid stocks the user has already liked or rejected
-- Provide actionable investment insights
-
-RESPONSE FORMAT - Return a JSON array with objects containing:
-{
-  "symbol": "STOCK_SYMBOL",
-  "name": "Full Company Name",
-  "sector": "Technology/Healthcare/Finance/Consumer/Energy/Industrial/etc",
-  "industry": "Software/Pharmaceuticals/Banking/Retail/Oil & Gas/Manufacturing/etc",
-  "reason": "Detailed investment thesis explaining why this stock is recommended",
-  "analysis": "Comprehensive analysis of the company's business model, financials, and growth prospects",
-  "riskLevel": "low/medium/high",
-  "confidence": 0.0-1.0,
-  "marketCap": "large/mid/small",
-  "growthPotential": "low/medium/high",
-  "investmentHorizon": "short-term/medium-term/long-term",
-  "keyRisks": ["Risk 1", "Risk 2", "Risk 3"],
-  "keyBenefits": ["Benefit 1", "Benefit 2", "Benefit 3"],
-  "targetPrice": "Current price estimate",
-  "dividendYield": "Dividend yield if applicable",
-  "recommendation": "buy/hold/avoid"
-}
+Return a JSON array with exactly ${maxRecommendations} objects:
+[
+  {
+    "symbol": "STOCK_SYMBOL",
+    "name": "Company Name", 
+    "sector": "Technology",
+    "industry": "Software",
+    "reason": "Brief reason for recommendation",
+    "analysis": "Brief analysis",
+    "riskLevel": "medium",
+    "confidence": 0.7,
+    "marketCap": "large",
+    "growthPotential": "medium",
+    "investmentHorizon": "medium-term",
+    "keyRisks": ["Market risk", "Sector risk"],
+    "keyBenefits": ["Growth potential", "Strong fundamentals"],
+    "targetPrice": "$100.00",
+    "dividendYield": "2.5%",
+    "recommendation": "buy"
+  }
+]
 
 Focus on providing investment-grade analysis that would help an investor make informed decisions.
+Use the learning context to provide more personalized recommendations.
 `;
   }
 
@@ -173,8 +151,9 @@ Focus on providing investment-grade analysis that would help an investor make in
     console.log('🔑 LLM API Key Status:', {
       hasKey: !!apiKey,
       keyLength: apiKey ? apiKey.length : 0,
-      keyStart: apiKey ? apiKey.substring(0, 10) + '...' : 'none',
-      isPlaceholder: apiKey === "sk-placeholder-key" || apiKey === "your_openai_api_key_here"
+      isPlaceholder: apiKey === "sk-placeholder-key" || apiKey === "your_openai_api_key_here",
+      fromExtra: !!Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENAI_API_KEY,
+      fromEnv: !!process.env.EXPO_PUBLIC_OPENAI_API_KEY
     });
     
     // Check if API key is properly configured
@@ -182,9 +161,10 @@ Focus on providing investment-grade analysis that would help an investor make in
       console.error('❌ No valid LLM API key configured');
       console.log('💡 To fix this:');
       console.log('1. Get a free API key from https://platform.openai.com/api-keys');
-      console.log('2. Add EXPO_PUBLIC_OPENAI_API_KEY=your_key_here to your .env file');
-      console.log('3. Restart the app');
-      throw new Error('OpenAI API key not configured. Please set a valid API key.');
+      console.log('2. Create a .env file in your project root');
+      console.log('3. Add EXPO_PUBLIC_OPENAI_API_KEY=your_key_here to the .env file');
+      console.log('4. Restart the app with: npx expo start --clear');
+      throw new Error('OpenAI API key not configured. Please set a valid API key in .env file.');
     }
 
     try {
@@ -229,11 +209,13 @@ Focus on providing investment-grade analysis that would help an investor make in
       
       if (!content) {
         console.error('❌ No content in OpenAI response');
+        console.error('❌ Full response data:', JSON.stringify(data, null, 2));
         throw new Error('No content received from OpenAI API');
       }
 
       console.log('✅ OpenAI API call successful with 4o mini model');
       console.log('📝 Response content length:', content.length, 'characters');
+      console.log('📝 Response content preview:', content.substring(0, 500) + '...');
       return content;
     } catch (error) {
       console.error('❌ LLM API error:', error.message);
@@ -326,65 +308,10 @@ Focus on providing investment-grade analysis that would help an investor make in
     }
   }
 
-  // Fallback recommendations based on risk profile - only used if LLM completely fails
+  // No fallback recommendations - only real LLM-generated stocks
   getFallbackRecommendations(maxRecommendations) {
-    console.log('🔄 Using fallback recommendations...');
-    console.log('📊 Risk profile for fallback:', this.riskProfile);
-    const riskLevel = this.getRiskLevel(this.riskProfile?.volatility);
-    console.log('📊 Risk level for fallback:', riskLevel);
-    
-    const recommendations = {
-      low: [
-        { symbol: 'AAPL', sector: 'Technology', industry: 'Consumer Electronics', reason: 'Stable tech giant with strong fundamentals', riskLevel: 'low', confidence: 0.8 },
-        { symbol: 'MSFT', sector: 'Technology', industry: 'Software', reason: 'Diversified tech company with cloud growth', riskLevel: 'low', confidence: 0.85 },
-        { symbol: 'JNJ', sector: 'Healthcare', industry: 'Pharmaceuticals', reason: 'Defensive healthcare stock with dividend', riskLevel: 'low', confidence: 0.8 },
-        { symbol: 'PG', sector: 'Consumer', industry: 'Consumer Staples', reason: 'Consumer staples with stable earnings', riskLevel: 'low', confidence: 0.8 },
-        { symbol: 'KO', sector: 'Consumer', industry: 'Beverages', reason: 'Beverage giant with global presence', riskLevel: 'low', confidence: 0.75 },
-        { symbol: 'WMT', sector: 'Consumer', industry: 'Retail', reason: 'Retail leader with defensive characteristics', riskLevel: 'low', confidence: 0.75 },
-        { symbol: 'HD', sector: 'Consumer', industry: 'Home Improvement', reason: 'Home improvement leader with strong brand', riskLevel: 'low', confidence: 0.75 },
-        { symbol: 'MCD', sector: 'Consumer', industry: 'Restaurants', reason: 'Fast food leader with global reach', riskLevel: 'low', confidence: 0.75 },
-        { symbol: 'DIS', sector: 'Consumer', industry: 'Entertainment', reason: 'Entertainment giant with diverse revenue', riskLevel: 'low', confidence: 0.75 },
-        { symbol: 'PEP', sector: 'Consumer', industry: 'Beverages', reason: 'Beverage company with strong cash flow', riskLevel: 'low', confidence: 0.75 }
-      ],
-      medium: [
-        { symbol: 'GOOGL', sector: 'Technology', industry: 'Internet Services', reason: 'Tech leader with advertising dominance', riskLevel: 'medium', confidence: 0.8 },
-        { symbol: 'AMZN', sector: 'Consumer', industry: 'E-commerce', reason: 'E-commerce and cloud services leader', riskLevel: 'medium', confidence: 0.75 },
-        { symbol: 'TSLA', sector: 'Consumer', industry: 'Automotive', reason: 'Electric vehicle and clean energy pioneer', riskLevel: 'medium', confidence: 0.7 },
-        { symbol: 'NVDA', sector: 'Technology', industry: 'Semiconductors', reason: 'AI and gaming chip leader', riskLevel: 'medium', confidence: 0.75 },
-        { symbol: 'META', sector: 'Technology', industry: 'Social Media', reason: 'Social media and metaverse company', riskLevel: 'medium', confidence: 0.7 },
-        { symbol: 'NFLX', sector: 'Consumer', industry: 'Entertainment', reason: 'Streaming entertainment leader', riskLevel: 'medium', confidence: 0.65 },
-        { symbol: 'CRM', sector: 'Technology', industry: 'Software', reason: 'Cloud software and customer relations', riskLevel: 'medium', confidence: 0.7 },
-        { symbol: 'ADBE', sector: 'Technology', industry: 'Software', reason: 'Creative software and digital media', riskLevel: 'medium', confidence: 0.7 },
-        { symbol: 'PYPL', sector: 'Technology', industry: 'Financial Technology', reason: 'Digital payments and fintech leader', riskLevel: 'medium', confidence: 0.7 },
-        { symbol: 'UBER', sector: 'Technology', industry: 'Transportation', reason: 'Ride-sharing and delivery platform', riskLevel: 'medium', confidence: 0.65 }
-      ],
-      high: [
-        { symbol: 'AMD', sector: 'Technology', industry: 'Semiconductors', reason: 'Semiconductor company with growth potential', riskLevel: 'high', confidence: 0.7 },
-        { symbol: 'SPOT', sector: 'Consumer', industry: 'Entertainment', reason: 'Music streaming with global expansion', riskLevel: 'high', confidence: 0.65 },
-        { symbol: 'ZM', sector: 'Technology', industry: 'Software', reason: 'Video communications platform', riskLevel: 'high', confidence: 0.6 },
-        { symbol: 'CRWD', sector: 'Technology', industry: 'Cybersecurity', reason: 'Cybersecurity with high growth', riskLevel: 'high', confidence: 0.65 },
-        { symbol: 'PLTR', sector: 'Technology', industry: 'Software', reason: 'Data analytics and AI platform', riskLevel: 'high', confidence: 0.6 },
-        { symbol: 'SNOW', sector: 'Technology', industry: 'Software', reason: 'Cloud data warehousing company', riskLevel: 'high', confidence: 0.6 },
-        { symbol: 'RBLX', sector: 'Technology', industry: 'Gaming', reason: 'Gaming and metaverse platform', riskLevel: 'high', confidence: 0.6 },
-        { symbol: 'SQ', sector: 'Technology', industry: 'Financial Technology', reason: 'Digital payments and fintech', riskLevel: 'high', confidence: 0.6 },
-        { symbol: 'SHOP', sector: 'Technology', industry: 'E-commerce', reason: 'E-commerce platform for businesses', riskLevel: 'high', confidence: 0.6 },
-        { symbol: 'TWLO', sector: 'Technology', industry: 'Software', reason: 'Cloud communications platform', riskLevel: 'high', confidence: 0.6 }
-      ]
-    };
-
-    const suitableStocks = recommendations[riskLevel] || recommendations.medium;
-    const result = suitableStocks.slice(0, maxRecommendations).map(stock => ({
-      ...stock,
-      riskLevel: stock.riskLevel || 'medium',
-      confidence: stock.confidence || 0.7,
-      marketCap: 'large',
-      growthPotential: riskLevel === 'high' ? 'high' : riskLevel === 'medium' ? 'medium' : 'low'
-    }));
-    
-    console.log('✅ Fallback recommendations generated:', result.length, 'stocks');
-    console.log('📊 Sample stocks:', result.slice(0, 3).map(s => s.symbol));
-    
-    return result;
+    console.log('❌ No fallback recommendations available - only real LLM-generated stocks');
+    throw new Error('No fallback recommendations available. Only real LLM-generated stocks are supported.');
   }
 
   // Helper methods for risk profile interpretation

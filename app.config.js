@@ -1,5 +1,7 @@
 
 
+import 'dotenv/config';
+
 export default {
   expo: {
     name: 'FlexFinance',
@@ -62,6 +64,7 @@ export default {
       EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
       EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
       EXPO_PUBLIC_FINNHUB_API_KEY: process.env.EXPO_PUBLIC_FINNHUB_API_KEY,
+      EXPO_PUBLIC_GROQ_API_KEY: process.env.EXPO_PUBLIC_GROQ_API_KEY,
       EXPO_PUBLIC_YAHOO_FINANCE_ENABLED: process.env.EXPO_PUBLIC_YAHOO_FINANCE_ENABLED || 'false',
       // New secure backend configuration
       EXPO_PUBLIC_PROXY_ENABLED: process.env.EXPO_PUBLIC_PROXY_ENABLED || 'false',

@@ -1,176 +1,150 @@
+// PortfolioTracker.js - Enhanced Portfolio Tracking with Cash/Equity Separation
 import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
-  Alert,
+  ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { collection, getDocs, getDoc, doc } from 'firebase/firestore';
-import { db, auth } from '../firebase';
-import { getPortfolioValue } from '../services/finnhubService';
+import { getStockQuote, getMultipleQuotes } from '../services/finnhubService';
 
-export default function PortfolioTracker() {
-  const [portfolioValue, setPortfolioValue] = useState(0);
-  const [cashBalance, setCashBalance] = useState(0);
+export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, onPortfolioValueChange }) {
   const [holdings, setHoldings] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [totalEquity, setTotalEquity] = useState(0);
+  const [totalValue, setTotalValue] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [errors, setErrors] = useState([]);
-  const [hasError, setHasError] = useState(false);
 
-  const fetchPortfolioData = async () => {
-    const user = auth.currentUser;
-    if (!user) return;
+  useEffect(() => {
+    updatePortfolioData();
+  }, [portfolio]);
 
+  const updatePortfolioData = async () => {
     try {
-      setLoading(true);
-      setErrors([]);
-      setHasError(false);
-
-      // Get user's cash balance
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const userData = userDoc.data();
-      const cash = userData?.cashBalance || 100000;
-      setCashBalance(cash);
-
-      // Get portfolio holdings
-      const portfolioSnap = await getDocs(collection(db, 'users', user.uid, 'portfolio'));
-      const holdingsData = portfolioSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })).filter(holding => holding.shares > 0);
-
-      setHoldings(holdingsData);
-
-      if (holdingsData.length === 0) {
-        setPortfolioValue(cash);
-        setLastUpdated(new Date());
+      if (!portfolio || portfolio.length === 0) {
+        setHoldings([]);
+        setTotalEquity(0);
+        setTotalValue(cashBalance || 0);
         return;
       }
 
-      // Get real-time prices for all holdings with error handling
-      try {
-        const portfolioUpdate = await getPortfolioValue(holdingsData, user.uid);
-        
-        setPortfolioValue(portfolioUpdate.totalValue + cash);
-        // Update holdings with proper price formatting
-        const updatedHoldings = portfolioUpdate.holdings.map(holding => ({
-          ...holding,
-          currentPrice: typeof holding.currentPrice === 'number' ? holding.currentPrice : holding.averagePrice || 0,
-          currentValue: holding.shares * (typeof holding.currentPrice === 'number' ? holding.currentPrice : holding.averagePrice || 0),
-          priceFormatted: typeof holding.currentPrice === 'number' ? `$${holding.currentPrice.toFixed(2)}` : 
-                         (holding.averagePrice ? `$${holding.averagePrice.toFixed(2)}` : '$0.00')
-        }));
-        setHoldings(updatedHoldings);
-        setErrors(portfolioUpdate.errors);
-        setLastUpdated(new Date());
-      } catch (priceError) {
-        console.error('Error fetching prices:', priceError);
-        // Use cached prices if available
-        const totalValue = holdingsData.reduce((sum, holding) => {
-          return sum + (holding.shares * (holding.averagePrice || 0));
-        }, cash);
-        setPortfolioValue(totalValue);
-        setHoldings(holdingsData.map(h => ({
-          ...h,
-          currentPrice: h.averagePrice || 0,
-          currentValue: h.shares * (h.averagePrice || 0),
-          change: 0,
-          changePercent: '0.00%'
-        })));
-        setErrors(['Using cached prices - real-time data unavailable']);
-      }
+      // Get current prices for all holdings
+      const symbols = portfolio.map(holding => holding.symbol);
+      const quotes = await getMultipleQuotes(symbols);
 
+      // Update holdings with current prices
+      const updatedHoldings = portfolio.map(holding => {
+        const quote = quotes.find(q => q.symbol === holding.symbol);
+        const currentPrice = quote ? quote.price : holding.averagePrice || 0;
+        const currentValue = holding.shares * currentPrice;
+        const change = currentPrice - (holding.averagePrice || 0);
+        const changePercent = holding.averagePrice ? (change / holding.averagePrice) * 100 : 0;
+
+        return {
+          ...holding,
+          currentPrice,
+          currentValue,
+          change,
+          changePercent,
+          changeFormatted: `${change >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`,
+        };
+      });
+
+      const equity = updatedHoldings.reduce((sum, holding) => sum + holding.currentValue, 0);
+      const total = equity + (cashBalance || 0);
+
+      setHoldings(updatedHoldings);
+      setTotalEquity(equity);
+      setTotalValue(total);
+      setLastUpdated(new Date());
+      
+      // Notify parent component of portfolio value change
+      if (onPortfolioValueChange) {
+        onPortfolioValueChange(total);
+      }
     } catch (error) {
-      console.error('Error fetching portfolio data:', error);
-      setHasError(true);
-      setErrors(['Failed to load portfolio data']);
-    } finally {
-      setLoading(false);
+      console.error('Error updating portfolio data:', error);
     }
   };
 
+  const onRefreshPortfolio = async () => {
+    setRefreshing(true);
+    await updatePortfolioData();
+    if (onRefresh) onRefresh();
+    setRefreshing(false);
+  };
+
+  // Auto-refresh prices every 30 seconds
   useEffect(() => {
-    fetchPortfolioData();
-    
-    // Refresh every 5 minutes
-    const interval = setInterval(fetchPortfolioData, 5 * 60 * 1000);
+    const interval = setInterval(() => {
+      if (portfolio && portfolio.length > 0) {
+        console.log('🔄 Auto-refreshing portfolio prices...');
+        updatePortfolioData();
+      }
+    }, 30000); // 30 seconds
+
     return () => clearInterval(interval);
-  }, []);
+  }, [portfolio]);
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
   };
 
-  const formatPercentage = (value) => {
-    // Handle both string and number inputs
-    if (typeof value === 'string') {
-      // If it's already a formatted string, return as is
-      if (value.includes('%')) {
-        return value;
-      }
-      // Try to parse the string as a number
-      const numValue = parseFloat(value);
-      if (isNaN(numValue)) {
-        return '0.00%';
-      }
-      return `${numValue >= 0 ? '+' : ''}${numValue.toFixed(2)}%`;
+  const formatPercentage = (percentage) => {
+    if (typeof percentage === 'string') {
+      return percentage;
     }
-    
-    // Handle number inputs
-    if (typeof value === 'number') {
-      return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-    }
-    
-    // Fallback for other types
-    return '0.00%';
+    return `${percentage >= 0 ? '+' : ''}${percentage.toFixed(2)}%`;
   };
-
-  const getChangeColor = (change) => {
-    return change >= 0 ? '#10b981' : '#ef4444';
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#6366f1" />
-          <Text style={styles.loadingText}>Updating portfolio...</Text>
-        </View>
-      </View>
-    );
-  }
-
-  if (hasError) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="warning" size={48} color="#ef4444" />
-          <Text style={styles.errorTitle}>Something went wrong</Text>
-          <Text style={styles.errorText}>Unable to load portfolio data</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchPortfolioData}>
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Portfolio Summary */}
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Portfolio Value</Text>
-        <Text style={styles.summaryValue}>{formatCurrency(portfolioValue)}</Text>
-        <Text style={styles.summarySubtitle}>
-          Cash: {formatCurrency(cashBalance)} • {holdings.length} Holdings
-        </Text>
+      <View style={styles.summaryContainer}>
+        <Text style={styles.summaryTitle}>Portfolio Overview</Text>
+        
+        {/* Total Value */}
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Total Value</Text>
+            <Text style={styles.summaryValue}>{formatCurrency(totalValue)}</Text>
+          </View>
+        </View>
+
+        {/* Cash vs Equity Breakdown */}
+        <View style={styles.breakdownContainer}>
+          <View style={styles.breakdownCard}>
+            <View style={styles.breakdownHeader}>
+              <Ionicons name="wallet" size={20} color="#10b981" />
+              <Text style={styles.breakdownTitle}>Liquid Cash</Text>
+            </View>
+            <Text style={styles.breakdownValue}>{formatCurrency(cashBalance || 0)}</Text>
+            <Text style={styles.breakdownPercentage}>
+              {totalValue > 0 ? `${((cashBalance || 0) / totalValue * 100).toFixed(1)}%` : '0%'}
+            </Text>
+          </View>
+
+          <View style={styles.breakdownCard}>
+            <View style={styles.breakdownHeader}>
+              <Ionicons name="trending-up" size={20} color="#6366f1" />
+              <Text style={styles.breakdownTitle}>Equity</Text>
+            </View>
+            <Text style={styles.breakdownValue}>{formatCurrency(totalEquity)}</Text>
+            <Text style={styles.breakdownPercentage}>
+              {totalValue > 0 ? `${(totalEquity / totalValue * 100).toFixed(1)}%` : '0%'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Last Updated */}
         {lastUpdated && (
           <Text style={styles.lastUpdated}>
             Last updated: {lastUpdated.toLocaleTimeString()}
@@ -179,233 +153,242 @@ export default function PortfolioTracker() {
       </View>
 
       {/* Holdings List */}
-      {holdings.length > 0 && (
+      {holdings.length > 0 ? (
         <View style={styles.holdingsContainer}>
-          <Text style={styles.holdingsTitle}>Your Holdings</Text>
-          {holdings.map((holding) => (
-            <View key={holding.id} style={styles.holdingItem}>
+          <View style={styles.holdingsHeader}>
+            <Text style={styles.holdingsTitle}>Your Holdings</Text>
+            <TouchableOpacity onPress={onRefreshPortfolio} style={styles.refreshButton}>
+              <Ionicons name="refresh" size={20} color="#6366f1" />
+            </TouchableOpacity>
+          </View>
+
+          {holdings.map((holding, index) => (
+            <View key={index} style={styles.holdingCard}>
               <View style={styles.holdingHeader}>
-                <Text style={styles.symbol}>{holding.symbol}</Text>
-                <Text style={styles.shares}>{holding.shares} shares</Text>
-              </View>
-              
-              <View style={styles.holdingDetails}>
-                <View style={styles.priceInfo}>
-                  <Text style={styles.currentPrice}>
-                    {holding.priceFormatted || formatCurrency(holding.currentPrice)}
+                <View style={styles.holdingInfo}>
+                  <Text style={styles.holdingSymbol}>{holding.symbol}</Text>
+                  <Text style={styles.holdingShares}>{holding.shares} shares</Text>
+                </View>
+                <View style={styles.holdingValue}>
+                  <Text style={styles.holdingPrice}>
+                    {formatCurrency(holding.currentPrice)}
                   </Text>
                   <Text style={[
-                    styles.changePercent,
-                    { color: getChangeColor(holding.changePercent) }
+                    styles.holdingChange,
+                    { color: holding.change >= 0 ? '#10b981' : '#ef4444' }
                   ]}>
                     {formatPercentage(holding.changePercent)}
                   </Text>
                 </View>
-                
-                <View style={styles.valueInfo}>
-                  <Text style={styles.totalValue}>
+              </View>
+
+              <View style={styles.holdingDetails}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Total Value</Text>
+                  <Text style={styles.detailValue}>
                     {formatCurrency(holding.currentValue)}
                   </Text>
-                  <Text style={styles.avgPrice}>
-                    Avg: {formatCurrency(holding.averagePrice)}
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Avg Price</Text>
+                  <Text style={styles.detailValue}>
+                    {formatCurrency(holding.averagePrice || 0)}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Gain/Loss</Text>
+                  <Text style={[
+                    styles.detailValue,
+                    { color: holding.change >= 0 ? '#10b981' : '#ef4444' }
+                  ]}>
+                    {formatCurrency(holding.change * holding.shares)}
                   </Text>
                 </View>
               </View>
             </View>
           ))}
         </View>
-      )}
-
-      {/* Errors */}
-      {errors.length > 0 && (
-        <View style={styles.errorsContainer}>
-          <Text style={styles.errorsTitle}>Update Errors</Text>
-          {errors.map((error, index) => (
-            <Text key={index} style={styles.errorText}>
-              {error.symbol}: {error.error}
-            </Text>
-          ))}
+      ) : (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="trending-up" size={60} color="#6366f1" />
+          <Text style={styles.emptyTitle}>No Holdings Yet</Text>
+          <Text style={styles.emptySubtitle}>
+            Start building your portfolio by accepting stock recommendations
+          </Text>
         </View>
       )}
-
-      {/* Refresh Button */}
-      <TouchableOpacity
-        style={styles.refreshButton}
-        onPress={fetchPortfolioData}
-        disabled={loading}
-      >
-        <Ionicons 
-          name="refresh" 
-          size={20} 
-          color="#ffffff" 
-        />
-        <Text style={styles.refreshText}>Refresh Portfolio</Text>
-      </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
+    backgroundColor: '#0f172a',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    color: '#94a3b8',
-    fontSize: 16,
-    marginTop: 12,
-  },
-  summaryCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 12,
+  summaryContainer: {
     padding: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: '#1e293b',
   },
   summaryTitle: {
+    color: '#f1f5f9',
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  summaryCard: {
+    backgroundColor: '#334155',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryLabel: {
     color: '#94a3b8',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 16,
   },
   summaryValue: {
-    color: '#ffffff',
-    fontSize: 28,
+    color: '#f1f5f9',
+    fontSize: 20,
     fontWeight: 'bold',
-    marginTop: 4,
   },
-  summarySubtitle: {
-    color: '#64748b',
+  breakdownContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  breakdownCard: {
+    flex: 1,
+    backgroundColor: '#334155',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  breakdownHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  breakdownTitle: {
+    color: '#94a3b8',
+    fontSize: 14,
+    marginLeft: 6,
+  },
+  breakdownValue: {
+    color: '#f1f5f9',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  breakdownPercentage: {
+    color: '#6366f1',
     fontSize: 12,
-    marginTop: 8,
+    fontWeight: '500',
   },
   lastUpdated: {
     color: '#64748b',
-    fontSize: 10,
-    marginTop: 4,
+    fontSize: 12,
+    textAlign: 'center',
   },
   holdingsContainer: {
-    marginBottom: 20,
+    flex: 1,
+    padding: 20,
+  },
+  holdingsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   holdingsTitle: {
-    color: '#ffffff',
+    color: '#f1f5f9',
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 12,
   },
-  holdingItem: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 8,
+  refreshButton: {
+    padding: 8,
+  },
+  holdingsList: {
+    flex: 1,
+  },
+  holdingCard: {
+    backgroundColor: '#1e293b',
     padding: 16,
-    marginBottom: 8,
+    borderRadius: 12,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: '#334155',
   },
   holdingHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
-  symbol: {
-    color: '#ffffff',
+  holdingInfo: {
+    flex: 1,
+  },
+  holdingSymbol: {
+    color: '#f1f5f9',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  holdingShares: {
+    color: '#94a3b8',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  holdingValue: {
+    alignItems: 'flex-end',
+  },
+  holdingPrice: {
+    color: '#f1f5f9',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  shares: {
-    color: '#94a3b8',
-    fontSize: 12,
-  },
-  holdingDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  priceInfo: {
-    alignItems: 'flex-start',
-  },
-  currentPrice: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  changePercent: {
+  holdingChange: {
     fontSize: 14,
     fontWeight: '500',
-    marginTop: 2,
   },
-  valueInfo: {
-    alignItems: 'flex-end',
+  holdingDetails: {
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+    paddingTop: 12,
   },
-  totalValue: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
   },
-  avgPrice: {
+  detailLabel: {
     color: '#94a3b8',
     fontSize: 12,
-    marginTop: 2,
   },
-  errorsContainer: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 20,
-  },
-  errorsTitle: {
-    color: '#ef4444',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  errorText: {
-    color: '#ef4444',
+  detailValue: {
+    color: '#cbd5e1',
     fontSize: 12,
-    marginBottom: 4,
+    fontWeight: '500',
   },
-  errorContainer: {
+  emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
-  errorTitle: {
+  emptyTitle: {
+    color: '#f1f5f9',
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ef4444',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  retryButton: {
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
     marginTop: 16,
   },
-  retryButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  refreshButton: {
-    backgroundColor: '#6366f1',
-    borderRadius: 8,
-    padding: 12,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  refreshText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+  emptySubtitle: {
+    color: '#94a3b8',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 8,
   },
 }); 

@@ -1,144 +1,45 @@
-// stockGenerationService.js - Personalized Stock Generation System
-import { doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, deleteDoc } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+// stockGenerationService.js - Enhanced Stock Generation with LLM + Finnhub
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import llmService from './llmService';
-import { getSecureRecommendations, getSecureStockAnalysis } from './secureLLMService';
-import smartRateLimiter from './smartRateLimiter';
-import Constants from 'expo-constants';
+import groqService from './groqService';
 import { getStockQuote, getCompanyProfile } from './finnhubService';
-
-// Cache configuration
-const CACHE_CONFIG = {
-  priceCacheDuration: 5 * 60 * 1000, // 5 minutes for prices
-  marketCapCacheDuration: 24 * 60 * 60 * 1000, // 24 hours for market cap
-  maxCacheSize: 100 // Maximum number of cached stocks
-};
-
-// In-memory cache for stock data
-const stockCache = new Map();
 
 class StockGenerationService {
   constructor() {
-    this.userPreferences = null;
+    this.userId = null;
     this.riskProfile = null;
-    this.generatedStocks = [];
-    this.lastGenerationDate = null;
-  }
-
-  // Check if cached data is still valid
-  isCacheValid(symbol, dataType = 'price') {
-    const cached = stockCache.get(symbol);
-    if (!cached) return false;
-
-    const now = Date.now();
-    const cacheDuration = dataType === 'marketCap' ? CACHE_CONFIG.marketCapCacheDuration : CACHE_CONFIG.priceCacheDuration;
-    
-    return (now - cached.timestamp) < cacheDuration;
-  }
-
-  // Get cached stock data
-  getCachedStockData(symbol) {
-    return stockCache.get(symbol);
-  }
-
-  // Cache stock data
-  cacheStockData(symbol, data) {
-    // Implement LRU cache eviction if cache is full
-    if (stockCache.size >= CACHE_CONFIG.maxCacheSize) {
-      const oldestKey = stockCache.keys().next().value;
-      stockCache.delete(oldestKey);
-    }
-
-    stockCache.set(symbol, {
-      ...data,
-      timestamp: Date.now(),
-      lastUpdated: new Date().toISOString()
-    });
-  }
-
-  // Clean up expired cache entries
-  cleanupCache() {
-    const now = Date.now();
-    let cleanedCount = 0;
-    
-    for (const [symbol, data] of stockCache.entries()) {
-      const isPriceExpired = (now - data.timestamp) > CACHE_CONFIG.priceCacheDuration;
-      const isMarketCapExpired = (now - data.timestamp) > CACHE_CONFIG.marketCapCacheDuration;
-      
-      // Remove if both price and market cap are expired
-      if (isPriceExpired && isMarketCapExpired) {
-        stockCache.delete(symbol);
-        cleanedCount++;
-      }
-    }
-    
-    if (cleanedCount > 0) {
-      console.log(`🧹 Cleaned up ${cleanedCount} expired cache entries`);
-    }
-  }
-
-  // Get cache statistics
-  getCacheStats() {
-    const now = Date.now();
-    let priceValid = 0;
-    let marketCapValid = 0;
-    let expired = 0;
-    
-    for (const [symbol, data] of stockCache.entries()) {
-      const isPriceValid = (now - data.timestamp) < CACHE_CONFIG.priceCacheDuration;
-      const isMarketCapValid = (now - data.timestamp) < CACHE_CONFIG.marketCapCacheDuration;
-      
-      if (isPriceValid) priceValid++;
-      if (isMarketCapValid) marketCapValid++;
-      if (!isPriceValid && !isMarketCapValid) expired++;
-    }
-    
-    return {
-      totalEntries: stockCache.size,
-      priceValid,
-      marketCapValid,
-      expired
-    };
-  }
-
-  // Force refresh cache for a specific symbol
-  async forceRefreshCache(symbol) {
-    stockCache.delete(symbol);
-    console.log(`🔄 Cache refreshed for ${symbol}`);
-  }
-
-  // Check network connectivity
-  async checkNetworkConnectivity() {
-    try {
-      const response = await fetch('https://httpbin.org/status/200', { method: 'HEAD' });
-      return response.ok;
-    } catch (error) {
-      console.warn('Network connectivity check failed:', error);
-      return false;
-    }
+    this.userPreferences = null;
   }
 
   // Load user context for stock generation
   async loadUserContext() {
     try {
+      const { getAuth } = await import('firebase/auth');
+      const auth = getAuth();
       const user = auth.currentUser;
+      
       if (!user) {
-        throw new Error('User not authenticated');
+        console.error('❌ No authenticated user found');
+        return false;
       }
 
-      // Get user preferences
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      this.userId = user.uid;
+      console.log('👤 Loading context for user:', this.userId);
+
+      // Load user data
+      const userDoc = await getDoc(doc(db, 'users', this.userId));
       const userData = userDoc.data();
       
       this.userPreferences = {
         likedStocks: userData?.likedStocks || [],
         rejectedStocks: userData?.rejectedStocks || [],
         portfolio: userData?.portfolio || [],
-        cashBalance: userData?.cashBalance || 100000
+        cashBalance: userData?.cashBalance || 100000,
       };
 
-      // Get risk profile
-      const riskDoc = await getDoc(doc(db, 'users', user.uid, 'preferences', 'quiz'));
+      // Load risk profile from quiz results
+      const riskDoc = await getDoc(doc(db, 'users', this.userId, 'preferences', 'quiz'));
       const riskData = riskDoc.data();
       
       this.riskProfile = riskData?.riskProfile || {
@@ -149,7 +50,10 @@ class StockGenerationService {
         liquidity: 2
       };
 
-      console.log('✅ User context loaded for stock generation');
+      console.log('✅ User context loaded successfully');
+      console.log('📊 Risk profile:', this.riskProfile);
+      console.log('📊 User preferences:', this.userPreferences);
+      
       return true;
     } catch (error) {
       console.error('❌ Error loading user context:', error);
@@ -157,270 +61,518 @@ class StockGenerationService {
     }
   }
 
-  // Generate personalized stock recommendations using LLM ONLY - NO MOCK DATA
-  async generatePersonalizedStocks(maxStocks = 10) {
+  // Generate initial 10 stock recommendations after risk quiz
+  async generateInitialRecommendations() {
     try {
-      console.log('🔄 Starting LLM-only stock generation...');
+      console.log('🎯 Generating initial 10 stock recommendations...');
       
-      if (!this.riskProfile || !this.userPreferences) {
-        console.log('📊 Loading user context...');
-        await this.loadUserContext();
-      }
-
-      console.log('📊 User context loaded:', {
-        riskProfile: this.riskProfile ? 'loaded' : 'missing',
-        userPreferences: this.userPreferences ? 'loaded' : 'missing',
-        likedStocks: this.userPreferences?.likedStocks?.length || 0,
-        rejectedStocks: this.userPreferences?.rejectedStocks?.length || 0
-      });
-      
-      // Get LLM recommendations for stock selection (try secure first, fallback to direct, then fallback recommendations)
-      let recommendations;
-      try {
-        console.log('🤖 Trying secure LLM recommendations...');
-        const userContext = {
-          riskProfile: this.riskProfile,
-          userPreferences: this.userPreferences
-        };
-        recommendations = await getSecureRecommendations(userContext, maxStocks * 3);
-        console.log('✅ Secure LLM recommendations received');
-      } catch (error) {
-        console.warn('⚠️ Secure LLM failed, falling back to direct API:', error.message);
-        try {
-          console.log('🤖 Trying direct LLM recommendations...');
-          recommendations = await llmService.getRecommendations(maxStocks * 3);
-          console.log('✅ Direct LLM recommendations received');
-        } catch (llmError) {
-          console.error('❌ Both secure and direct LLM failed, using fallback recommendations:', llmError.message);
-          console.log('🔄 Using fallback stock recommendations...');
-          recommendations = llmService.getFallbackRecommendations(maxStocks * 3);
-          console.log('✅ Fallback recommendations loaded');
+      // Load user context if not already loaded
+      if (!this.userId) {
+        const contextLoaded = await this.loadUserContext();
+        if (!contextLoaded) {
+          throw new Error('Failed to load user context');
         }
       }
-      
-      if (!recommendations || recommendations.length === 0) {
-        console.error('❌ No recommendations received from LLM service');
-        console.log('🔄 Using fallback recommendations as last resort...');
-        recommendations = llmService.getFallbackRecommendations(maxStocks * 3);
-        console.log('✅ Fallback recommendations loaded as last resort');
-      }
-      
-      console.log(`🎯 LLM generated ${recommendations.length} recommendations:`, recommendations.map(r => r.symbol));
-      
-      // Filter out already liked/rejected stocks
-      const likedSymbols = this.userPreferences.likedStocks.map(s => s.symbol);
-      const rejectedSymbols = this.userPreferences.rejectedStocks.map(s => s.symbol);
-      
-      const availableStocks = recommendations
-        .filter(rec => !likedSymbols.includes(rec.symbol) && !rejectedSymbols.includes(rec.symbol))
-        .slice(0, maxStocks * 2); // Get more candidates since we'll filter by real data
 
-      console.log(`📊 ${availableStocks.length} stocks available after filtering:`, availableStocks.map(s => s.symbol));
-      
-      // Get real-time data for each LLM recommendation
+      // Get 10 LLM recommendations using Groq
+      const recommendations = await groqService.getRecommendations(10);
+      console.log(`✅ Groq LLM generated ${recommendations.length} initial recommendations`);
+
+      if (!recommendations || recommendations.length === 0) {
+        console.warn('⚠️ No LLM recommendations received');
+        throw new Error('No stock recommendations generated by LLM');
+      }
+
+      // Fetch real data for each recommendation
       const stocksWithRealData = [];
       
-      for (const stock of availableStocks) {
+      for (const recommendation of recommendations) {
         try {
-          console.log(`🔄 Fetching real-time data for ${stock.symbol}...`);
+          console.log(`📊 Processing initial recommendation: ${recommendation.symbol}`);
           
           // Get real-time quote data
-          console.log(`📈 Getting quote for ${stock.symbol}...`);
-          const quoteData = await getStockQuote(stock.symbol);
-          console.log(`✅ Quote received for ${stock.symbol}: $${quoteData.price}`);
-          
-          if (!quoteData || !quoteData.price) {
-            console.warn(`⚠️ No real price data for ${stock.symbol}, skipping`);
-            continue;
-          }
+          const quoteData = await getStockQuote(recommendation.symbol);
           
           // Get company profile data
-          console.log(`🏢 Getting profile for ${stock.symbol}...`);
-          const companyData = await getCompanyProfile(stock.symbol);
-          console.log(`✅ Profile received for ${stock.symbol}: ${companyData.name}`);
+          const companyData = await getCompanyProfile(recommendation.symbol);
           
-          if (!companyData || !companyData.name) {
-            console.warn(`⚠️ No real company data for ${stock.symbol}, skipping`);
-            continue;
-          }
+          // Generate detailed analysis using LLM
+          const analysis = await this.generateStockAnalysis(recommendation.symbol, companyData, quoteData);
           
-          // Create stock object with LLM analysis + real data
-          const enhancedStock = {
-            // LLM-generated data
-            symbol: stock.symbol,
-            analysis: stock.analysis || stock.reason,
-            investmentThesis: stock.reason,
-            riskLevel: stock.riskLevel || 'medium',
-            confidence: stock.confidence || 0.7,
-            marketCap: stock.marketCap || 'large',
-            growthPotential: stock.growthPotential || 'medium',
-            keyRisks: stock.keyRisks || ['Market volatility', 'Sector-specific risks'],
-            keyBenefits: stock.keyBenefits || ['Growth potential', 'Strong fundamentals'],
-            recommendation: stock.recommendation || 'buy',
-            
-            // Real-time data from Finnhub
+          // Combine LLM analysis with real data
+          const stock = {
+            symbol: recommendation.symbol,
             name: companyData.name,
             price: quoteData.price,
             priceFormatted: `$${quoteData.price.toFixed(2)}`,
             change: quoteData.change,
             changePercent: quoteData.changePercent,
-            sector: companyData.sector,
-            industry: companyData.industry,
-            description: companyData.description,
-            marketCap: companyData.marketCap,
-            peRatio: companyData.peRatio,
-            dividendYield: companyData.dividendYield,
-            website: companyData.website,
+            sector: recommendation.sector || companyData.finnhubIndustry,
+            industry: recommendation.industry || companyData.finnhubIndustry,
+            description: companyData.weburl ? `Visit ${companyData.weburl}` : 'Company information available',
+            website: companyData.weburl,
             logo: companyData.logo,
-            
-            // Metadata
-            generatedAt: new Date(),
+            marketCap: companyData.marketCapitalization ? `${(companyData.marketCapitalization / 1e9).toFixed(2)}B` : 'N/A',
+            peRatio: 'N/A',
+            dividendYield: 'N/A',
+            growth: '',
+            riskLevel: recommendation.riskLevel || 'medium',
+            confidence: recommendation.confidence || 0.7,
+            reason: recommendation.reason || 'AI-generated recommendation',
+            riskMetrics: { beta: 'N/A', volatility: Math.abs(quoteData.change) },
+            timestamp: Date.now(),
+            lastUpdated: new Date().toISOString(),
+            analysis: analysis.summary,
+            investmentThesis: analysis.investmentThesis,
+            keyRisks: analysis.keyRisks,
+            keyBenefits: analysis.keyBenefits,
+            targetPrice: `$${(quoteData.price * 1.1).toFixed(2)}`,
+            recommendation: recommendation.recommendation || 'buy',
+            generatedAt: new Date().toISOString(),
             source: 'LLM + Real-time Data',
-            timestamp: new Date().toISOString(),
-            lastUpdated: new Date().toISOString()
+            isInitialRecommendation: true
           };
-          
-          stocksWithRealData.push(enhancedStock);
-          console.log(`✅ ${stock.symbol}: $${quoteData.price} - ${stock.reason?.substring(0, 50)}...`);
-          
-          // Stop when we have enough stocks
-          if (stocksWithRealData.length >= maxStocks) {
-            console.log(`🎯 Reached target of ${maxStocks} stocks`);
-            break;
-          }
+
+          stocksWithRealData.push(stock);
+          console.log(`✅ Successfully processed initial ${recommendation.symbol}`);
           
         } catch (error) {
-          console.error(`❌ Failed to get real data for ${stock.symbol}:`, error.message);
-          continue; // Skip this stock and try the next one
+          console.warn(`⚠️ Failed to process initial ${recommendation.symbol}:`, error.message);
+          continue;
         }
       }
-      
-      if (stocksWithRealData.length === 0) {
-        throw new Error('No stocks with real-time data available. Please check your Finnhub API key.');
-      }
 
-      console.log(`✅ Successfully generated ${stocksWithRealData.length} stocks with LLM analysis and real-time data`);
+      console.log(`✅ Generated ${stocksWithRealData.length} initial stocks with real data`);
+      
+      // Store initial recommendations
+      if (stocksWithRealData.length > 0) {
+        await this.storeGeneratedStocks(stocksWithRealData);
+        console.log(`✅ Successfully stored ${stocksWithRealData.length} initial stocks`);
+        
+        // Verify storage by retrieving stocks
+        const storedStocks = await this.getGeneratedStocks();
+        console.log(`🔍 Verification: Retrieved ${storedStocks.length} stored stocks`);
+      } else {
+        console.warn('⚠️ No stocks to store - all stocks failed to process');
+      }
+      
       return stocksWithRealData;
       
     } catch (error) {
-      console.error('❌ Error generating personalized stocks:', error);
-      throw error; // Don't fall back to mock data, let the error propagate
-    }
-  }
-
-  // Generate and store daily stock recommendations
-  async generateDailyStocks() {
-    try {
-      const uid = auth.currentUser?.uid;
-      if (!uid) throw new Error('User not authenticated');
-
-      const today = new Date().toDateString();
-      
-      // Clean up expired cache entries
-      this.cleanupCache();
-      
-      // Check if stocks were already generated today
-      const existingStocks = await this.getGeneratedStocks();
-      if (existingStocks.length > 0) {
-        const lastGenerated = new Date(existingStocks[0].generatedAt).toDateString();
-        if (lastGenerated === today) {
-          console.log('✅ Stocks already generated today, using cached data');
-          return existingStocks;
-        }
-      }
-
-      console.log('🔄 Generating new daily stock recommendations...');
-
-      // Generate personalized recommendations
-      const recommendedStocks = await this.generatePersonalizedStocks(10);
-      
-      if (!recommendedStocks || recommendedStocks.length === 0) {
-        throw new Error('No personalized stocks generated');
-      }
-      
-      // Store generated stocks in Firestore
-      await this.storeGeneratedStocks(recommendedStocks);
-
-      console.log(`✅ Generated and stored ${recommendedStocks.length} new stock recommendations`);
-      return recommendedStocks;
-    } catch (error) {
-      console.error('❌ Error generating daily stocks:', error);
-      throw error; // Don't fall back to mock data, let the error propagate
-    }
-  }
-
-  // Store generated stocks in Firestore
-  async storeGeneratedStocks(stocks) {
-    try {
-      const uid = auth.currentUser?.uid;
-      if (!uid) throw new Error('User not authenticated');
-
-      // Clear old generated stocks
-      const oldStocksRef = collection(db, 'users', uid, 'generatedStocks');
-      const oldStocksSnap = await getDocs(oldStocksRef);
-      
-      // Delete old stocks
-      const deletePromises = oldStocksSnap.docs.map(docSnapshot => deleteDoc(docSnapshot.ref));
-      await Promise.all(deletePromises);
-
-      // Store new stocks
-      const storePromises = stocks.map(stock => 
-        setDoc(doc(db, 'users', uid, 'generatedStocks', stock.symbol), stock)
-      );
-      await Promise.all(storePromises);
-
-      console.log(`✅ Stored ${stocks.length} generated stocks in Firestore`);
-    } catch (error) {
-      console.error('❌ Error storing generated stocks:', error);
+      console.error('❌ Error generating initial recommendations:', error);
       throw error;
     }
   }
 
-  // Get generated stocks from Firestore
+  // Generate detailed stock analysis using LLM
+  async generateStockAnalysis(symbol, companyData, quoteData) {
+    try {
+      // Load user context if not already loaded
+      if (!this.userId) {
+        const contextLoaded = await this.loadUserContext();
+        if (!contextLoaded) {
+          console.error('❌ Failed to load user context for stock analysis');
+          return {
+            summary: `${symbol} shows potential for growth based on current market conditions and company fundamentals.`,
+            investmentThesis: `${symbol} represents a solid investment opportunity with balanced risk-reward profile.`,
+            keyBenefits: ['Growth potential', 'Strong fundamentals'],
+            keyRisks: ['Market volatility', 'Sector-specific risks']
+          };
+        }
+      }
+      
+      const prompt = `Analyze ${symbol} (${companyData.name}) for investment purposes. 
+      
+      Company Info: ${companyData.name}, ${companyData.finnhubIndustry || 'Technology'} sector, Market Cap: ${companyData.marketCapitalization ? `${(companyData.marketCapitalization / 1e9).toFixed(2)}B` : 'N/A'}
+      Current Price: $${quoteData.price}, Change: ${quoteData.changePercent}, Volume: ${quoteData.volume || 'N/A'}
+      
+      User Risk Profile: ${this.getRiskLevel(this.riskProfile.volatility)} (${this.riskProfile.volatility}/10)
+      Investment Horizon: ${this.getTimeHorizon(this.riskProfile.timeHorizon)}
+      Investment Knowledge: ${this.getKnowledgeLevel(this.riskProfile.knowledge)}
+      
+      Based on the real-time pricing data and user's risk profile, provide:
+      1. A 100-word investment analysis summary tailored to this user
+      2. Investment thesis (2-3 sentences) using current market data
+      3. 2 key benefits for this user's specific risk profile
+      4. 2 key risks for this user's specific risk profile
+      
+      Format as JSON:
+      {
+        "summary": "100-word analysis...",
+        "investmentThesis": "Thesis...",
+        "keyBenefits": ["Benefit 1", "Benefit 2"],
+        "keyRisks": ["Risk 1", "Risk 2"]
+      }`;
+
+      const response = await groqService.callLLM(prompt);
+      const analysis = JSON.parse(response);
+      
+      return {
+        summary: analysis.summary,
+        investmentThesis: analysis.investmentThesis,
+        keyBenefits: analysis.keyBenefits,
+        keyRisks: analysis.keyRisks
+      };
+    } catch (error) {
+      console.error(`❌ Error generating analysis for ${symbol}:`, error);
+      // Return a more generic analysis instead of hardcoded one
+      return {
+        summary: `Analysis for ${symbol} could not be generated due to an error. Please try again.`,
+        investmentThesis: `Unable to generate investment thesis for ${symbol} at this time.`,
+        keyBenefits: ['Analysis unavailable'],
+        keyRisks: ['Analysis unavailable']
+      };
+    }
+  }
+
+  // Record user choice (like/reject) for LLM learning
+  async recordUserChoice(symbol, choice, stockData) {
+    try {
+      // Load user context if not already loaded
+      if (!this.userId) {
+        const contextLoaded = await this.loadUserContext();
+        if (!contextLoaded) {
+          console.error('❌ Failed to load user context for recording choice');
+          return;
+        }
+      }
+
+      const choiceData = {
+        symbol,
+        choice, // 'like' or 'reject'
+        stockData,
+        timestamp: new Date().toISOString(),
+        riskProfile: this.riskProfile
+      };
+
+      // Store choice for LLM learning
+      await setDoc(
+        doc(db, 'users', this.userId, 'stockChoices', `${symbol}_${Date.now()}`),
+        choiceData
+      );
+
+      // Update user preferences
+      if (choice === 'like') {
+        if (!this.userPreferences.likedStocks.includes(symbol)) {
+          this.userPreferences.likedStocks.push(symbol);
+        }
+      } else {
+        if (!this.userPreferences.rejectedStocks.includes(symbol)) {
+          this.userPreferences.rejectedStocks.push(symbol);
+        }
+      }
+
+      // Update user document
+      await updateDoc(doc(db, 'users', this.userId), {
+        likedStocks: this.userPreferences.likedStocks,
+        rejectedStocks: this.userPreferences.rejectedStocks
+      });
+
+      console.log(`✅ Recorded ${choice} choice for ${symbol}`);
+    } catch (error) {
+      console.error(`❌ Error recording choice for ${symbol}:`, error);
+    }
+  }
+
+  // Generate personalized stock recommendations using LLM with learning
+  async generatePersonalizedStocks(maxStocks = 5) {
+    try {
+      console.log('🤖 Generating personalized stocks with learning...');
+      
+      // Load user context if not already loaded
+      if (!this.userId) {
+        const contextLoaded = await this.loadUserContext();
+        if (!contextLoaded) {
+          throw new Error('Failed to load user context');
+        }
+      }
+
+      // Get LLM recommendations with learning context using Groq
+      const recommendations = await groqService.getRecommendations(maxStocks);
+      console.log(`✅ Groq LLM generated ${recommendations.length} recommendations`);
+
+      if (!recommendations || recommendations.length === 0) {
+        console.warn('⚠️ No LLM recommendations received');
+        throw new Error('No stock recommendations generated by LLM');
+      }
+
+      // Filter out already liked/rejected stocks
+      const availableStocks = recommendations.filter(rec => 
+        !this.userPreferences.likedStocks.includes(rec.symbol) &&
+        !this.userPreferences.rejectedStocks.includes(rec.symbol)
+      );
+
+      console.log(`📊 ${availableStocks.length} stocks available after filtering`);
+
+      // Fetch real data for each recommendation
+      const stocksWithRealData = [];
+      
+      for (const recommendation of availableStocks) {
+        try {
+          console.log(`📊 Processing recommendation: ${recommendation.symbol}`);
+          
+          // Get real-time quote data
+          const quoteData = await getStockQuote(recommendation.symbol);
+          
+          // Get company profile data
+          const companyData = await getCompanyProfile(recommendation.symbol);
+          
+          // Generate detailed analysis
+          const analysis = await this.generateStockAnalysis(recommendation.symbol, companyData, quoteData);
+          
+          // Combine LLM analysis with real data
+          const stock = {
+            symbol: recommendation.symbol,
+            name: companyData.name,
+            price: quoteData.price,
+            priceFormatted: `$${quoteData.price.toFixed(2)}`,
+            change: quoteData.change,
+            changePercent: quoteData.changePercent,
+            sector: recommendation.sector || companyData.finnhubIndustry,
+            industry: recommendation.industry || companyData.finnhubIndustry,
+            description: companyData.weburl ? `Visit ${companyData.weburl}` : 'Company information available',
+            website: companyData.weburl,
+            logo: companyData.logo,
+            marketCap: companyData.marketCapitalization ? `${(companyData.marketCapitalization / 1e9).toFixed(2)}B` : 'N/A',
+            peRatio: 'N/A',
+            dividendYield: 'N/A',
+            growth: '',
+            riskLevel: recommendation.riskLevel || 'medium',
+            confidence: recommendation.confidence || 0.7,
+            reason: recommendation.reason || 'AI-generated recommendation',
+            riskMetrics: { beta: 'N/A', volatility: Math.abs(quoteData.change) },
+            timestamp: Date.now(),
+            lastUpdated: new Date().toISOString(),
+            analysis: analysis.summary,
+            investmentThesis: analysis.investmentThesis,
+            keyRisks: analysis.keyRisks,
+            keyBenefits: analysis.keyBenefits,
+            targetPrice: `$${(quoteData.price * 1.1).toFixed(2)}`,
+            recommendation: recommendation.recommendation || 'buy',
+            generatedAt: new Date().toISOString(),
+            source: 'LLM + Real-time Data'
+          };
+
+          stocksWithRealData.push(stock);
+          console.log(`✅ Successfully processed ${recommendation.symbol}`);
+          
+        } catch (error) {
+          console.warn(`⚠️ Failed to process ${recommendation.symbol}:`, error.message);
+          continue;
+        }
+      }
+
+      console.log(`✅ Generated ${stocksWithRealData.length} stocks with real data`);
+      return stocksWithRealData;
+      
+    } catch (error) {
+      console.error('❌ Error generating personalized stocks:', error);
+      throw error;
+    }
+  }
+
+  // Generate daily stocks for swiping (exactly 10 stocks = 5 pairs)
+  async generateDailyStocks() {
+    try {
+      console.log('📅 Generating exactly 10 stocks (5 pairs)...');
+      
+      // Load user context first
+      const contextLoaded = await this.loadUserContext();
+      if (!contextLoaded) {
+        console.error('❌ Failed to load user context');
+        throw new Error('Failed to load user context');
+      }
+      
+      // Get exactly 10 personalized recommendations
+      const recommendedStocks = await this.generatePersonalizedStocks(10);
+      
+      if (!recommendedStocks || recommendedStocks.length === 0) {
+        console.warn('⚠️ No personalized stocks generated');
+        throw new Error('No personalized stocks generated');
+      }
+
+      // Ensure we have exactly 10 stocks
+      if (recommendedStocks.length < 10) {
+        console.warn(`⚠️ Only generated ${recommendedStocks.length} stocks, need 10`);
+        throw new Error(`Only generated ${recommendedStocks.length} stocks, need 10`);
+      }
+
+      // Store the generated stocks
+      await this.storeGeneratedStocks(recommendedStocks);
+      
+      console.log(`✅ Generated and stored exactly ${recommendedStocks.length} daily stocks`);
+      return recommendedStocks;
+      
+    } catch (error) {
+      console.error('❌ Error generating daily stocks:', error);
+      throw error;
+    }
+  }
+
+  // Store generated stocks in Firebase
+  async storeGeneratedStocks(stocks) {
+    try {
+      // Load user context if not already loaded
+      if (!this.userId) {
+        const contextLoaded = await this.loadUserContext();
+        if (!contextLoaded) {
+          console.error('❌ Failed to load user context for storing stocks');
+          return;
+        }
+      }
+
+      // Clear old stocks first
+      const oldStocksRef = collection(db, 'users', this.userId, 'generatedStocks');
+      const oldStocksSnapshot = await getDocs(oldStocksRef);
+      
+      for (const doc of oldStocksSnapshot.docs) {
+        await deleteDoc(doc.ref);
+      }
+
+      // Store new stocks
+      console.log(`💾 Storing ${stocks.length} stocks for user: ${this.userId}`);
+      for (const stock of stocks) {
+        console.log(`📝 Storing stock: ${stock.symbol} - ${stock.name}`);
+        await setDoc(
+          doc(db, 'users', this.userId, 'generatedStocks', stock.symbol),
+          {
+            ...stock,
+            storedAt: new Date().toISOString()
+          }
+        );
+      }
+
+      console.log(`✅ Stored ${stocks.length} stocks in Firebase`);
+    } catch (error) {
+      console.error('❌ Error storing generated stocks:', error);
+    }
+  }
+
+  // Get stored generated stocks
   async getGeneratedStocks() {
     try {
-      const uid = auth.currentUser?.uid;
-      if (!uid) throw new Error('User not authenticated');
+      // Load user context if not already loaded
+      if (!this.userId) {
+        const contextLoaded = await this.loadUserContext();
+        if (!contextLoaded) {
+          console.error('❌ Failed to load user context for generated stocks');
+          return [];
+        }
+      }
 
-      const stocksRef = collection(db, 'users', uid, 'generatedStocks');
-      const stocksSnap = await getDocs(stocksRef);
+      console.log(`🔍 Fetching stocks for user: ${this.userId}`);
+      const stocksRef = collection(db, 'users', this.userId, 'generatedStocks');
+      const snapshot = await getDocs(stocksRef);
       
-      const stocks = stocksSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      console.log(`📊 Firebase returned ${snapshot.docs.length} documents`);
+      
+      const stocks = [];
+      snapshot.forEach(doc => {
+        const stockData = doc.data();
+        console.log(`📋 Stock document: ${doc.id}`, {
+          symbol: stockData.symbol,
+          name: stockData.name,
+          price: stockData.price
+        });
+        stocks.push({ ...stockData, id: doc.id });
+      });
 
-      return stocks.sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
+      console.log(`✅ Retrieved ${stocks.length} stored stocks`);
+      return stocks;
     } catch (error) {
       console.error('❌ Error getting generated stocks:', error);
       return [];
     }
   }
 
+  // Get stock pairs for side-by-side comparison
+  async getStockPairs() {
+    try {
+      // Load user context if not already loaded
+      if (!this.userId) {
+        const contextLoaded = await this.loadUserContext();
+        if (!contextLoaded) {
+          console.error('❌ Failed to load user context for stock pairs');
+          return [];
+        }
+      }
+      
+      const stocks = await this.getGeneratedStocks();
+      const pairs = [];
+      
+      for (let i = 0; i < stocks.length - 1; i += 2) {
+        pairs.push({
+          left: stocks[i],
+          right: stocks[i + 1]
+        });
+      }
+      
+      // If odd number, add last stock with null right
+      if (stocks.length % 2 === 1) {
+        pairs.push({
+          left: stocks[stocks.length - 1],
+          right: null
+        });
+      }
+      
+      return pairs;
+    } catch (error) {
+      console.error('❌ Error getting stock pairs:', error);
+      return [];
+    }
+  }
+
+  // No fallback stocks - only real LLM-generated stocks
+  getFallbackStocks() {
+    console.log('❌ No fallback stocks available - only real LLM-generated stocks');
+    throw new Error('No fallback stocks available. Only real LLM-generated stocks are supported.');
+  }
+
+  // Clear all cached stocks from Firebase
+  async clearAllStocks() {
+    try {
+      if (!this.userId) {
+        const contextLoaded = await this.loadUserContext();
+        if (!contextLoaded) {
+          throw new Error('Failed to load user context');
+        }
+      }
+
+      console.log('🧹 Clearing all cached stocks...');
+      const stocksRef = collection(db, 'users', this.userId, 'generatedStocks');
+      const snapshot = await getDocs(stocksRef);
+      
+      for (const doc of snapshot.docs) {
+        await deleteDoc(doc.ref);
+      }
+      
+      console.log(`✅ Cleared ${snapshot.docs.length} cached stocks`);
+    } catch (error) {
+      console.error('❌ Error clearing stocks:', error);
+      throw error;
+    }
+  }
+
   // Get risk level description
   getRiskLevel(volatility) {
-    if (volatility <= 8) return 'Conservative';
-    if (volatility <= 12) return 'Moderate';
+    if (volatility <= 3) return 'Conservative';
+    if (volatility <= 7) return 'Moderate';
     return 'Aggressive';
   }
 
-  // Get stock analysis using LLM
-  async getStockAnalysis(symbol) {
-    try {
-      const userContext = {
-        riskProfile: this.riskProfile,
-        userPreferences: this.userPreferences
-      };
-      return await getSecureStockAnalysis(symbol, userContext);
-    } catch (error) {
-      console.error('❌ Error getting stock analysis:', error);
-      try {
-        return await llmService.getStockAnalysis(symbol);
-      } catch (fallbackError) {
-        console.error('❌ Fallback analysis also failed:', fallbackError);
-        throw new Error('Unable to generate stock analysis');
-      }
-    }
+  // Get time horizon description
+  getTimeHorizon(timeHorizon) {
+    if (timeHorizon <= 1) return 'Short-term (1-2 years)';
+    if (timeHorizon <= 3) return 'Medium-term (3-5 years)';
+    return 'Long-term (5+ years)';
+  }
+
+  // Get knowledge level description
+  getKnowledgeLevel(knowledge) {
+    if (knowledge <= 1) return 'Beginner';
+    if (knowledge <= 2) return 'Intermediate';
+    if (knowledge <= 3) return 'Advanced';
+    return 'Expert';
   }
 }
 

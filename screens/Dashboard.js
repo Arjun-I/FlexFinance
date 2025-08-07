@@ -22,11 +22,11 @@ import {
   setDoc,
 } from 'firebase/firestore';
 
-import SwipeStocksMock from './SwipeStocksMock';
-import InvestmentsScreen from './InvestmentsScreen';
-import LLMTestComponent from '../components/LLMTestComponent';
-import DataDebugComponent from '../components/DataDebugComponent';
-import StockGenerationTest from '../components/StockGenerationTest';
+
+// Removed unused InvestmentsScreen - using PortfolioTracker instead
+// Debug components removed for cleaner UI
+import StockComparison from '../components/StockComparison';
+import PortfolioTracker from '../components/PortfolioTracker';
 
 export default function Dashboard({ navigation }) {
   const [selectedTab, setSelectedTab] = useState('overview');
@@ -35,6 +35,8 @@ export default function Dashboard({ navigation }) {
   const [portfolioValue, setPortfolioValue] = useState(0);
   const [loadingOverview, setLoadingOverview] = useState(true);
   const [error, setError] = useState(null);
+  const [portfolioHoldings, setPortfolioHoldings] = useState([]);
+  const [swipeLoading, setSwipeLoading] = useState(false);
 
   // Android-specific error handling
   useEffect(() => {
@@ -104,44 +106,59 @@ export default function Dashboard({ navigation }) {
     }
   };
 
+  const fetchOverviewData = async () => {
+    if (!user) return;
+    try {
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Overview fetch timeout')), 10000)
+      );
+
+      const fetchPromise = Promise.all([
+        getDoc(doc(db, 'users', user.uid)),
+        getDocs(collection(db, 'users', user.uid, 'portfolio'))
+      ]);
+
+      const [userDoc, portfolioSnap] = await Promise.race([fetchPromise, timeoutPromise]);
+      
+      const data = userDoc.exists() ? userDoc.data() : {};
+      const holdings = portfolioSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Calculate portfolio value based on current market prices, not average cost
+      // This will be updated by PortfolioTracker with real-time prices
+      const cash = data.cashBalance || 0;
+      
+      // Initial value using average prices, will be updated by PortfolioTracker
+      const initialHoldingsValue = holdings.reduce((sum, holding) => {
+        const { shares = 0, averagePrice = 0 } = holding;
+        return sum + shares * averagePrice;
+      }, 0);
+      
+      setPortfolioValue(initialHoldingsValue + cash);
+      setProfile(data);
+      setPortfolioHoldings(holdings);
+    } catch (err) {
+      console.error('Error fetching overview data:', err);
+      // Set default values on error
+      setPortfolioValue(0);
+      setProfile({});
+      setPortfolioHoldings([]);
+    } finally {
+      setLoadingOverview(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchOverviewData = async () => {
-      if (!user) return;
-      try {
-        // Add timeout to prevent hanging
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Overview fetch timeout')), 10000)
-        );
-
-        const fetchPromise = Promise.all([
-          getDoc(doc(db, 'users', user.uid)),
-          getDocs(collection(db, 'users', user.uid, 'portfolio'))
-        ]);
-
-        const [userDoc, portfolioSnap] = await Promise.race([fetchPromise, timeoutPromise]);
-        
-        const data = userDoc.exists() ? userDoc.data() : {};
-        const holdingsValue = portfolioSnap.docs.reduce((sum, d) => {
-          const { shares = 0, buyPrice = 0 } = d.data();
-          return sum + shares * buyPrice;
-        }, 0);
-
-        const cash = data.cashBalance || 0;
-        setPortfolioValue(holdingsValue + cash);
-        setProfile(data);
-      } catch (err) {
-        console.error('Error fetching overview data:', err);
-        // Set default values on error
-        setPortfolioValue(0);
-        setProfile({});
-      } finally {
-        setLoadingOverview(false);
-      }
-    };
-
-    if (selectedTab === 'overview') {
+    if (selectedTab === 'overview' || selectedTab === 'investments') {
       setLoadingOverview(true);
       fetchOverviewData();
+    } else if (selectedTab === 'swipe') {
+      setSwipeLoading(true);
+      // Small delay to show loading state
+      setTimeout(() => setSwipeLoading(false), 1000);
     }
   }, [selectedTab, user]);
 
@@ -297,15 +314,29 @@ export default function Dashboard({ navigation }) {
   );
 
   const renderSwipe = () => (
-    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
-      <SwipeStocksMock />
-    </ScrollView>
+    <View style={styles.tabContent}>
+      {swipeLoading ? (
+        <View style={styles.loadingContainer}>
+          <Ionicons name="refresh" size={40} color="#6366f1" />
+          <Text style={styles.loadingText}>Loading stock recommendations...</Text>
+        </View>
+      ) : (
+        <StockComparison navigation={navigation} />
+      )}
+    </View>
   );
 
+  const handlePortfolioValueChange = (newValue) => {
+    setPortfolioValue(newValue);
+  };
+
   const renderInvestments = () => (
-    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
-      <InvestmentsScreen />
-    </ScrollView>
+    <PortfolioTracker 
+      portfolio={portfolioHoldings}
+      cashBalance={profile?.cashBalance || 100000}
+      onRefresh={fetchOverviewData}
+      onPortfolioValueChange={handlePortfolioValueChange}
+    />
   );
 
   const renderProfile = () => (
@@ -356,23 +387,9 @@ export default function Dashboard({ navigation }) {
     </ScrollView>
   );
 
-  const renderLLMTest = () => (
-    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
-      <LLMTestComponent />
-    </ScrollView>
-  );
+  // Debug components removed for cleaner UI
 
-  const renderDataDebug = () => (
-    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
-      <DataDebugComponent />
-    </ScrollView>
-  );
-
-  const renderStockGenerationTest = () => (
-    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
-      <StockGenerationTest />
-    </ScrollView>
-  );
+  // Debug components removed for cleaner UI
 
   return (
     <LinearGradient
@@ -402,13 +419,11 @@ export default function Dashboard({ navigation }) {
         {selectedTab === 'swipe' && renderSwipe()}
         {selectedTab === 'investments' && renderInvestments()}
         {selectedTab === 'profile' && renderProfile()}
-        {Platform.OS !== 'android' && selectedTab === 'llmtest' && renderLLMTest()}
-        {selectedTab === 'datadebug' && renderDataDebug()}
-        {selectedTab === 'stocktest' && renderStockGenerationTest()}
+        {/* Debug tabs removed for cleaner UI */}
       </View>
 
       <View style={styles.tabBar}>
-        {(Platform.OS === 'android' ? ['overview', 'swipe', 'investments', 'profile', 'datadebug', 'stocktest'] : ['overview', 'swipe', 'investments', 'profile', 'llmtest', 'datadebug', 'stocktest']).map((tab) => (
+        {['overview', 'swipe', 'investments', 'profile'].map((tab) => (
           <TouchableOpacity
             key={tab}
             style={[styles.tabButton, selectedTab === tab && styles.activeTab]}
@@ -422,13 +437,7 @@ export default function Dashboard({ navigation }) {
                   ? 'heart'
                   : tab === 'investments'
                   ? 'trending-up'
-                  : tab === 'profile'
-                  ? 'person'
-                  : tab === 'llmtest'
-                  ? 'flask'
-                  : tab === 'datadebug'
-                  ? 'bug'
-                  : 'analytics'
+                  : 'person'
               }
               size={24}
               color={selectedTab === tab ? '#6366f1' : '#94a3b8'}
@@ -445,13 +454,7 @@ export default function Dashboard({ navigation }) {
                 ? 'Swipe'
                 : tab === 'investments'
                 ? 'Investments'
-                : tab === 'profile'
-                ? 'Profile'
-                : tab === 'llmtest'
-                ? 'LLM Test'
-                : tab === 'datadebug'
-                ? 'Debug'
-                : 'Stock Test'}
+                : 'Profile'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -655,5 +658,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     marginLeft: 10,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    color: '#cbd5e1',
+    fontSize: 16,
+    marginTop: 10,
+    textAlign: 'center',
   },
 });

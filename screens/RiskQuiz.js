@@ -122,10 +122,13 @@ export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
           riskProfile: categoryScores,
         });
 
-        // Generate initial stock recommendations (3 picks)
+        // Clear old stocks and generate initial 10 stock recommendations
         try {
-          console.log('🔄 Generating initial stock recommendations...');
-          await stockGenerationService.generatePersonalizedStocks(3);
+          console.log('🔄 Clearing old stocks...');
+          await stockGenerationService.clearAllStocks();
+          
+          console.log('🔄 Generating initial 10 stock recommendations...');
+          await stockGenerationService.generateInitialRecommendations();
           console.log('✅ Initial stock recommendations generated successfully');
         } catch (error) {
           console.error('⚠️ Error generating stock recommendations:', error);

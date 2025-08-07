@@ -10,7 +10,7 @@ A React Native app for personalized stock recommendations and portfolio manageme
 - **Portfolio Tracking**: Monitor your investments and portfolio performance
 - **Risk Assessment**: Complete risk profile quiz for personalized recommendations
 - **Daily Limits**: 10 swipes per day to prevent over-trading
-- **Real-time Data**: Integration with Yahoo Finance API for current stock prices and metrics
+- **Real-time Data**: Integration with Finnhub API for current stock prices and metrics
 
 ## Investment Analysis Features
 
@@ -40,18 +40,21 @@ A React Native app for personalized stock recommendations and portfolio manageme
    Create a `.env` file in the root directory with your API keys:
    ```bash
    # Firebase Configuration
-   EXPO_PUBLIC_FIREBASE_API_KEY=AIzaSyDXvcgkEF1476JRFlafgPxK1HaqBbX9lP8
-   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=flexfinance-20c90.firebaseapp.com
-   EXPO_PUBLIC_FIREBASE_PROJECT_ID=flexfinance-20c90
-   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=flexfinance-20c90.appspot.com
-   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=517568675166
-   EXPO_PUBLIC_FIREBASE_APP_ID=1:517568675166:android:0ece24a5eea74357df23cf
+   EXPO_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key_here
+   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+   EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
 
    # OpenAI API Key for LLM Integration
    EXPO_PUBLIC_OPENAI_API_KEY=your_openai_api_key_here
 
-   # Yahoo Finance API (Free, no key required for basic stock data)
-   EXPO_PUBLIC_YAHOO_FINANCE_ENABLED=true
+   # Finnhub API Key (Free tier available - get key from https://finnhub.io/)
+   EXPO_PUBLIC_FINNHUB_API_KEY=your_finnhub_api_key_here
+
+   # Yahoo Finance API (Legacy - being replaced by Finnhub)
+   EXPO_PUBLIC_YAHOO_FINANCE_ENABLED=false
    ```
 
 3. **Run the App**
@@ -77,12 +80,12 @@ A React Native app for personalized stock recommendations and portfolio manageme
 
 ### Stock Generation
 - **Status**: ✅ **ENHANCED** - AI-powered stock recommendations with real-time data
-- **Features**: LLM analysis + Yahoo Finance integration for comprehensive investment insights
+- **Features**: LLM analysis + Finnhub integration for comprehensive investment insights
 
 ### API Configuration
 - **Firebase**: Required for user authentication and data storage
 - **OpenAI**: ✅ **CONFIGURED** - Using GPT-4o mini for enhanced investment analysis
-- **Yahoo Finance**: Free API for real-time stock data (no key required)
+- **Finnhub**: Free API for real-time stock data (requires API key)
 
 ## Investment Features
 
@@ -94,7 +97,7 @@ The app uses advanced LLM technology to provide:
 - **Portfolio Optimization**: Recommendations that diversify your holdings
 
 ### Real-time Data Integration
-- **Current Prices**: Live stock prices from Yahoo Finance
+- **Current Prices**: Live stock prices from Finnhub
 - **Market Metrics**: P/E ratios, dividend yields, market capitalization
 - **Price Changes**: Real-time price movement tracking
 - **Financial Data**: Company financials and performance metrics

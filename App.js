@@ -15,8 +15,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import SupportScreen from './screens/SupportScreen';
 import TermsScreen from './screens/TermsScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
-import DiagnosticScreen from './screens/DiagnosticScreen';
-import SimpleTestScreen from './screens/SimpleTestScreen';
+// Removed unused diagnostic and test screens
 import ErrorBoundary from './components/ErrorBoundary';
 
 // Android-specific simplified version
@@ -103,13 +102,13 @@ export default function App() {
       <NavigationContainer>
         <StatusBar style="light" />
         <Stack.Navigator
-          initialRouteName={Platform.OS === 'android' ? 'TestScreen' : 'Login'}
+          initialRouteName="Login"
           screenOptions={{
             headerShown: false,
             gestureEnabled: false,
           }}
         >
-          <Stack.Screen name="TestScreen" component={SimpleTestScreen} />
+          {/* Removed TestScreen - not needed */}
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen 
             name="RiskQuiz" 
@@ -125,7 +124,7 @@ export default function App() {
           <Stack.Screen name="SupportScreen" component={SupportScreen} />
           <Stack.Screen name="TermsScreen" component={TermsScreen} />
           <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />
-          <Stack.Screen name="DiagnosticScreen" component={DiagnosticScreen} />
+          {/* Removed DiagnosticScreen - not needed */}
         </Stack.Navigator>
       </NavigationContainer>
     </ErrorBoundary>

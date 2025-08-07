@@ -1,6 +1,5 @@
 node_modules
-.env
-.env.*
+
 
 # Android build artifacts
 android/app/build/
@@ -22,3 +21,4 @@ web-build/
 # OS
 .DS_Store
 Thumbs.db
+.env

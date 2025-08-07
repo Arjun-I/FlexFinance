@@ -1,406 +1,183 @@
-// finnhubService.js - Finnhub API Integration for Stock Data
+// finnhubService.js - Official Finnhub Client Integration
+import Finnhub from 'finnhub';
 import Constants from 'expo-constants';
 
+// Get API key from environment
 const extra = Constants.expoConfig?.extra || Constants.manifest?.extra;
 const FINNHUB_API_KEY = extra?.EXPO_PUBLIC_FINNHUB_API_KEY || process.env.EXPO_PUBLIC_FINNHUB_API_KEY;
-const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
 
-// Debug API key loading
-console.log('🔑 Finnhub API Key Status:', {
+// Initialize Finnhub client
+const finnhubClient = new Finnhub.DefaultApi(FINNHUB_API_KEY);
+
+console.log('🔑 Finnhub Client Status:', {
   hasKey: !!FINNHUB_API_KEY,
   keyLength: FINNHUB_API_KEY ? FINNHUB_API_KEY.length : 0,
-  keyStart: FINNHUB_API_KEY ? FINNHUB_API_KEY.substring(0, 10) + '...' : 'none',
   fromExtra: !!extra?.EXPO_PUBLIC_FINNHUB_API_KEY,
   fromEnv: !!process.env.EXPO_PUBLIC_FINNHUB_API_KEY
 });
 
-/**
- * Check if running in web browser
- */
-const isWebBrowser = () => {
-  return typeof window !== 'undefined' && window.document;
-};
-
-/**
- * Fetch with timeout support for both web and mobile
- */
-const fetchWithTimeout = async (url, options = {}, timeout = 15000) => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-
+// Get real-time stock quote
+export const getStockQuote = async (symbol) => {
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('Request timeout');
+    console.log(`📊 Fetching quote for ${symbol}...`);
+    
+    if (!FINNHUB_API_KEY) {
+      throw new Error('Finnhub API key not configured');
     }
+
+    return new Promise((resolve, reject) => {
+      finnhubClient.quote(symbol, (error, data, response) => {
+        if (error) {
+          console.error(`❌ Finnhub quote error for ${symbol}:`, error);
+          reject(error);
+          return;
+        }
+
+        console.log(`✅ Quote received for ${symbol}:`, data);
+        
+        if (!data.c || data.c === 0) {
+          console.warn(`⚠️ No price data for ${symbol}`);
+          reject(new Error(`No price data available for ${symbol}`));
+          return;
+        }
+
+        const result = {
+          symbol: symbol.toUpperCase(),
+          price: data.c,
+          change: data.d,
+          changePercent: `${data.dp >= 0 ? '+' : ''}${data.dp.toFixed(2)}%`,
+          high: data.h,
+          low: data.l,
+          open: data.o,
+          previousClose: data.pc,
+          timestamp: new Date().toISOString(),
+          volume: data.v || 0
+        };
+
+        console.log(`✅ Processed quote for ${symbol}:`, result);
+        resolve(result);
+      });
+    });
+  } catch (error) {
+    console.error(`❌ Error fetching quote for ${symbol}:`, error);
     throw error;
   }
 };
 
-/**
- * Get stock quote from Finnhub
- */
-export async function getStockQuote(symbol, userId = 'anonymous', portfolioSize = 0) {
-  if (!FINNHUB_API_KEY || FINNHUB_API_KEY === 'your_finnhub_api_key_here') {
-    console.error('❌ Finnhub API key not configured');
-    throw new Error('Finnhub API key not configured. Please set EXPO_PUBLIC_FINNHUB_API_KEY in your .env file');
-  }
-
+// Get company profile
+export const getCompanyProfile = async (symbol) => {
   try {
-    const url = `${FINNHUB_BASE_URL}/quote?symbol=${symbol.toUpperCase()}&token=${FINNHUB_API_KEY}`;
-    console.log(`🔄 Fetching quote for ${symbol} from: ${url.substring(0, 50)}...`);
+    console.log(`🏢 Fetching profile for ${symbol}...`);
     
-    const response = await fetchWithTimeout(url, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      }
-    }, 10000);
-
-    console.log(`📡 Response status for ${symbol}: ${response.status}`);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ API Error for ${symbol}:`, errorText);
-      throw new Error(`Finnhub API error: ${response.status} - ${errorText}`);
+    if (!FINNHUB_API_KEY) {
+      throw new Error('Finnhub API key not configured');
     }
 
-    const data = await response.json();
-    console.log(`📊 Raw data for ${symbol}:`, JSON.stringify(data, null, 2));
-    
-    if (!data.c || !data.d) {
-      throw new Error('Invalid data from Finnhub API');
-    }
+    return new Promise((resolve, reject) => {
+      finnhubClient.companyProfile2({ symbol: symbol }, (error, data, response) => {
+        if (error) {
+          console.error(`❌ Finnhub profile error for ${symbol}:`, error);
+          reject(error);
+          return;
+        }
 
-    const change = data.d;
-    const changePercent = data.dp;
-    const currentPrice = data.c;
-    const highPrice = data.h;
-    const lowPrice = data.l;
-    const openPrice = data.o;
-    const previousClose = data.pc;
-
-    return {
-      symbol: symbol.toUpperCase(),
-      price: currentPrice,
-      change: change,
-      changePercent: `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`,
-      high: highPrice,
-      low: lowPrice,
-      open: openPrice,
-      previousClose: previousClose,
-      timestamp: new Date().toISOString(),
-    };
-  } catch (error) {
-    console.error(`Error fetching quote for ${symbol}:`, error);
-    throw new Error(`Failed to fetch real-time data for ${symbol}: ${error.message}`);
-  }
-}
-
-/**
- * Get company profile from Finnhub
- */
-export async function getCompanyProfile(symbol) {
-  if (!FINNHUB_API_KEY || FINNHUB_API_KEY === 'your_finnhub_api_key_here') {
-    console.error('❌ Finnhub API key not configured');
-    throw new Error('Finnhub API key not configured. Please set EXPO_PUBLIC_FINNHUB_API_KEY in your .env file');
-  }
-
-  try {
-    const url = `${FINNHUB_BASE_URL}/stock/profile2?symbol=${symbol.toUpperCase()}&token=${FINNHUB_API_KEY}`;
-    console.log(`🔄 Fetching profile for ${symbol} from: ${url.substring(0, 50)}...`);
-    
-    const response = await fetchWithTimeout(url, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      }
-    }, 10000);
-
-    console.log(`📡 Profile response status for ${symbol}: ${response.status}`);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ Profile API Error for ${symbol}:`, errorText);
-      throw new Error(`Finnhub API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    console.log(`📊 Raw profile data for ${symbol}:`, JSON.stringify(data, null, 2));
-    
-    if (!data.name) {
-      throw new Error('Invalid company data from Finnhub API');
-    }
-
-    return {
-      symbol: symbol.toUpperCase(),
-      name: data.name,
-      sector: data.finnhubIndustry || 'Technology',
-      industry: data.finnhubIndustry || 'Software',
-      description: data.description || 'Company data from Finnhub',
-      website: data.weburl || '',
-      marketCap: data.marketCapitalization ? `${(data.marketCapitalization / 1e9).toFixed(2)}B` : 'N/A',
-      peRatio: data.pe ? data.pe.toFixed(2) : 'N/A',
-      dividendYield: data.dividendYield ? `${(data.dividendYield * 100).toFixed(2)}%` : 'N/A',
-      beta: data.beta ? data.beta.toFixed(2) : 'N/A',
-      country: data.country || 'US',
-      currency: data.currency || 'USD',
-      logo: data.logo || null,
-    };
-  } catch (error) {
-    console.error(`Error fetching company profile for ${symbol}:`, error);
-    throw new Error(`Failed to fetch company data for ${symbol}: ${error.message}`);
-  }
-}
-
-/**
- * Get multiple stock quotes efficiently
- */
-export async function getMultipleQuotes(symbols, userId = 'anonymous', portfolioSize = 0) {
-  const quotes = [];
-  const errors = [];
-
-  // Process symbols in batches to respect rate limits
-  const batchSize = 5;
-  for (let i = 0; i < symbols.length; i += batchSize) {
-    const batch = symbols.slice(i, i + batchSize);
-    
-    const batchPromises = batch.map(async (symbol) => {
-      try {
-        return await getStockQuote(symbol, userId, portfolioSize);
-      } catch (error) {
-        errors.push({ symbol, error: error.message });
-        return getFallbackStockData(symbol);
-      }
-    });
-
-    const batchResults = await Promise.all(batchPromises);
-    quotes.push(...batchResults);
-
-    // Add delay between batches to respect rate limits
-    if (i + batchSize < symbols.length) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-  }
-
-  return { quotes, errors };
-}
-
-/**
- * Search for stocks
- */
-export async function searchStocks(query, userId = 'anonymous', portfolioSize = 0) {
-  if (!FINNHUB_API_KEY || FINNHUB_API_KEY === 'your_finnhub_api_key_here') {
-    return getFallbackSearchResults(query);
-  }
-
-  try {
-    const url = `${FINNHUB_BASE_URL}/search?q=${encodeURIComponent(query)}&token=${FINNHUB_API_KEY}`;
-    
-    const response = await fetchWithTimeout(url, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      }
-    }, 10000);
-
-    if (!response.ok) {
-      throw new Error(`Finnhub API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    return data.result?.slice(0, 10).map(item => ({
-      symbol: item.symbol,
-      name: item.description,
-      type: item.type,
-      primaryExchange: item.primaryExchange,
-    })) || [];
-  } catch (error) {
-    console.error('Error searching stocks:', error);
-    return getFallbackSearchResults(query);
-  }
-}
-
-/**
- * Get portfolio value with Finnhub data
- */
-export async function getPortfolioValue(holdings, userId = 'anonymous') {
-  try {
-    if (holdings.length === 0) {
-      return { totalValue: 0, holdings: [], errors: [] };
-    }
-
-    const symbols = holdings.map(h => h.symbol);
-    const { quotes, errors } = await getMultipleQuotes(symbols, userId, holdings.length);
-    
-    const updatedHoldings = [];
-    let totalValue = 0;
-
-    holdings.forEach(holding => {
-      const quote = quotes.find(q => q.symbol === holding.symbol);
-      
-      if (quote && quote.price) {
-        const currentValue = holding.shares * quote.price;
-        totalValue += currentValue;
+        console.log(`✅ Profile received for ${symbol}:`, data);
         
-        updatedHoldings.push({
-          ...holding,
-          currentPrice: quote.price,
-          currentValue: currentValue,
-          change: quote.change,
-          changePercent: quote.changePercent,
-        });
-      } else {
-        // Use last known price if available
-        const currentValue = holding.shares * (holding.averagePrice || 0);
-        totalValue += currentValue;
-        
-        updatedHoldings.push({
-          ...holding,
-          currentPrice: holding.averagePrice || 0,
-          currentValue: currentValue,
-          change: 0,
-          changePercent: '0.00%',
-        });
-      }
+        if (!data.name) {
+          console.warn(`⚠️ No company data for ${symbol}`);
+          reject(new Error(`No company data available for ${symbol}`));
+          return;
+        }
+
+        const result = {
+          symbol: symbol.toUpperCase(),
+          name: data.name,
+          country: data.country || 'US',
+          currency: data.currency || 'USD',
+          exchange: data.exchange || 'NASDAQ',
+          ipo: data.ipo || 'N/A',
+          marketCapitalization: data.marketCapitalization || null,
+          phone: data.phone || 'N/A',
+          shareOutstanding: data.shareOutstanding || 0,
+          weburl: data.weburl || `https://finance.yahoo.com/quote/${symbol.toUpperCase()}`,
+          logo: data.logo || null,
+          finnhubIndustry: data.finnhubIndustry || 'Technology'
+        };
+
+        console.log(`✅ Processed profile for ${symbol}:`, result);
+        resolve(result);
+      });
     });
-
-    return {
-      totalValue,
-      holdings: updatedHoldings,
-      errors,
-    };
   } catch (error) {
-    console.error('Error calculating portfolio value:', error);
-    return {
-      totalValue: 0,
-      holdings: holdings.map(h => ({ 
-        ...h, 
-        currentPrice: h.averagePrice || 0, 
-        currentValue: h.shares * (h.averagePrice || 0) 
-      })),
-      errors: [error.message],
-    };
+    console.error(`❌ Error fetching profile for ${symbol}:`, error);
+    throw error;
   }
-}
+};
 
-/**
- * Fallback stock data when API fails
- */
-// REMOVED: getFallbackStockData - Only real data allowed
-function getFallbackStockData(symbol) {
-  const mockPrices = {
-    'AAPL': { price: 190.50, change: 2.3, changePercent: 1.22 },
-    'MSFT': { price: 310.25, change: 1.8, changePercent: 0.58 },
-    'GOOGL': { price: 2800.00, change: 3.1, changePercent: 0.11 },
-    'AMZN': { price: 140.75, change: 1.5, changePercent: 1.08 },
-    'TSLA': { price: 270.30, change: 4.2, changePercent: 1.58 },
-    'NVDA': { price: 500.00, change: 5.8, changePercent: 1.17 },
-    'META': { price: 350.40, change: 2.7, changePercent: 0.78 },
-    'NFLX': { price: 450.20, change: 1.9, changePercent: 0.42 },
-    'JNJ': { price: 165.80, change: 0.8, changePercent: 0.48 },
-    'PG': { price: 145.20, change: 0.5, changePercent: 0.35 }
-  };
+// Get multiple quotes at once
+export const getMultipleQuotes = async (symbols) => {
+  try {
+    console.log(`📊 Fetching multiple quotes for:`, symbols);
+    
+    const promises = symbols.map(symbol => 
+      getStockQuote(symbol).catch(error => {
+        console.warn(`⚠️ Failed to fetch ${symbol}:`, error.message);
+        return null;
+      })
+    );
 
-  const stockData = mockPrices[symbol] || { 
-    price: 100.00, 
-    change: 0.0, 
-    changePercent: 0.0 
-  };
-  
-  return {
-    symbol: symbol.toUpperCase(),
-    price: stockData.price,
-    change: stockData.change,
-    changePercent: `${stockData.changePercent >= 0 ? '+' : ''}${stockData.changePercent.toFixed(2)}%`,
-    high: stockData.price * 1.02,
-    low: stockData.price * 0.98,
-    open: stockData.price - stockData.change,
-    previousClose: stockData.price - stockData.change,
-    timestamp: new Date().toISOString(),
-  };
-}
+    const results = await Promise.all(promises);
+    const validResults = results.filter(result => result !== null);
+    
+    console.log(`✅ Fetched ${validResults.length}/${symbols.length} quotes`);
+    return validResults;
+  } catch (error) {
+    console.error(`❌ Error fetching multiple quotes:`, error);
+    throw error;
+  }
+};
 
-/**
- * Fallback company data when API fails
- */
-// REMOVED: getFallbackCompanyData - Only real data allowed
-function getFallbackCompanyData(symbol) {
-  const mockCompanies = {
-    'AAPL': { name: 'Apple Inc.', sector: 'Technology', industry: 'Consumer Electronics' },
-    'MSFT': { name: 'Microsoft Corporation', sector: 'Technology', industry: 'Software' },
-    'GOOGL': { name: 'Alphabet Inc.', sector: 'Technology', industry: 'Internet Services' },
-    'AMZN': { name: 'Amazon.com Inc.', sector: 'Consumer', industry: 'E-commerce' },
-    'TSLA': { name: 'Tesla Inc.', sector: 'Consumer', industry: 'Automotive' },
-    'NVDA': { name: 'NVIDIA Corporation', sector: 'Technology', industry: 'Semiconductors' },
-    'META': { name: 'Meta Platforms Inc.', sector: 'Technology', industry: 'Social Media' },
-    'NFLX': { name: 'Netflix Inc.', sector: 'Consumer', industry: 'Entertainment' },
-    'JNJ': { name: 'Johnson & Johnson', sector: 'Healthcare', industry: 'Pharmaceuticals' },
-    'PG': { name: 'Procter & Gamble Co.', sector: 'Consumer', industry: 'Consumer Staples' }
-  };
+// Get company financials
+export const getCompanyFinancials = async (symbol) => {
+  try {
+    console.log(`💰 Fetching financials for ${symbol}...`);
+    
+    if (!FINNHUB_API_KEY) {
+      throw new Error('Finnhub API key not configured');
+    }
 
-  const companyData = mockCompanies[symbol] || { 
-    name: `${symbol.toUpperCase()} Corporation`, 
-    sector: 'Technology', 
-    industry: 'Software' 
-  };
+    return new Promise((resolve, reject) => {
+      finnhubClient.companyBasicFinancials(symbol, 'annual', (error, data, response) => {
+        if (error) {
+          console.error(`❌ Finnhub financials error for ${symbol}:`, error);
+          reject(error);
+          return;
+        }
 
-  return {
-    symbol: symbol.toUpperCase(),
-    name: companyData.name,
-    sector: companyData.sector,
-    industry: companyData.industry,
-    description: 'Company data from Finnhub (fallback)',
-    website: '',
-    marketCap: 'N/A',
-    peRatio: 'N/A',
-    dividendYield: 'N/A',
-    beta: 'N/A',
-    country: 'US',
-    currency: 'USD',
-    logo: null,
-  };
-}
+        console.log(`✅ Financials received for ${symbol}:`, data);
+        resolve(data);
+      });
+    });
+  } catch (error) {
+    console.error(`❌ Error fetching financials for ${symbol}:`, error);
+    throw error;
+  }
+};
 
-/**
- * Fallback search results when API fails
- */
-// REMOVED: getFallbackSearchResults - Only real data allowed
-function getFallbackSearchResults(query) {
-  const commonStocks = [
-    { symbol: 'AAPL', name: 'Apple Inc.', type: 'Common Stock' },
-    { symbol: 'MSFT', name: 'Microsoft Corporation', type: 'Common Stock' },
-    { symbol: 'GOOGL', name: 'Alphabet Inc.', type: 'Common Stock' },
-    { symbol: 'AMZN', name: 'Amazon.com Inc.', type: 'Common Stock' },
-    { symbol: 'TSLA', name: 'Tesla Inc.', type: 'Common Stock' },
-    { symbol: 'NVDA', name: 'NVIDIA Corporation', type: 'Common Stock' },
-    { symbol: 'META', name: 'Meta Platforms Inc.', type: 'Common Stock' },
-    { symbol: 'NFLX', name: 'Netflix Inc.', type: 'Common Stock' },
-    { symbol: 'JNJ', name: 'Johnson & Johnson', type: 'Common Stock' },
-    { symbol: 'PG', name: 'Procter & Gamble Co.', type: 'Common Stock' }
-  ];
+// Test function to verify API connection
+export const testFinnhubConnection = async () => {
+  try {
+    console.log('🧪 Testing Finnhub connection...');
+    
+    if (!FINNHUB_API_KEY) {
+      throw new Error('Finnhub API key not configured');
+    }
 
-  return commonStocks.filter(stock => 
-    stock.symbol.toLowerCase().includes(query.toLowerCase()) ||
-    stock.name.toLowerCase().includes(query.toLowerCase())
-  );
-}
-
-export default {
-  getStockQuote,
-  getCompanyProfile,
-  getMultipleQuotes,
-  searchStocks,
-  getPortfolioValue
+    const testQuote = await getStockQuote('AAPL');
+    console.log('✅ Finnhub connection test successful:', testQuote);
+    return true;
+  } catch (error) {
+    console.error('❌ Finnhub connection test failed:', error);
+    return false;
+  }
 }; 
