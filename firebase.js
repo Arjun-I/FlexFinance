@@ -8,12 +8,12 @@ const extra = Constants.expoConfig?.extra || Constants.manifest?.extra;
 
 // Use environment variables for Firebase config
 const firebaseConfig = {
-  apiKey: extra?.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyDXvcgkEF1476JRFlafgPxK1HaqBbX9lP8",
-  authDomain: extra?.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "flexfinance-20c90.firebaseapp.com",
-  projectId: extra?.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "flexfinance-20c90",
-  storageBucket: extra?.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "flexfinance-20c90.appspot.com",
-  messagingSenderId: extra?.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "517568675166",
-  appId: extra?.EXPO_PUBLIC_FIREBASE_APP_ID || "1:517568675166:android:0ece24a5eea74357df23cf"
+  apiKey: extra?.EXPO_PUBLIC_FIREBASE_API_KEY || process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: extra?.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: extra?.EXPO_PUBLIC_FIREBASE_PROJECT_ID || process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: extra?.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: extra?.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: extra?.EXPO_PUBLIC_FIREBASE_APP_ID || process.env.EXPO_PUBLIC_FIREBASE_APP_ID
 };
 
 const requiredFields = [
