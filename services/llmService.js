@@ -87,12 +87,12 @@ User Preferences:
 Based on the user's risk profile and preferences, recommend exactly ${maxRecommendations} stocks that would be suitable for this investor. Consider:
 1. Risk tolerance alignment
 2. Investment horizon compatibility
-3. Portfolio diversification
+3. Portfolio diversification across different sectors and industries
 4. User's previous likes/rejections
 5. Ethical preferences
-6. Market sectors that align with user preferences
+6. Market sectors and industries that align with user preferences
 
-IMPORTANT: Generate diverse stock recommendations across different sectors (Technology, Healthcare, Finance, Consumer, Energy, Industrial, etc.) based on the user's risk profile. Do not repeat stocks the user has already liked or rejected.
+IMPORTANT: Generate diverse stock recommendations across different sectors (Technology, Healthcare, Finance, Consumer, Energy, Industrial, etc.) and industries within those sectors. Do not repeat stocks the user has already liked or rejected.
 
 Format your response as a JSON array with objects containing:
 {
@@ -100,7 +100,10 @@ Format your response as a JSON array with objects containing:
   "reason": "Brief explanation of why this stock fits the user's profile",
   "riskLevel": "low/medium/high",
   "confidence": 0.0-1.0,
-  "sector": "Technology/Healthcare/Finance/Consumer/Energy/Industrial/etc"
+  "sector": "Technology/Healthcare/Finance/Consumer/Energy/Industrial/etc",
+  "industry": "Software/Pharmaceuticals/Banking/Retail/Oil & Gas/Manufacturing/etc",
+  "marketCap": "large/mid/small",
+  "growthPotential": "low/medium/high"
 }
 `;
   }
@@ -172,40 +175,40 @@ Format your response as a JSON array with objects containing:
     
     const recommendations = {
       low: [
-        { symbol: 'AAPL', sector: 'Technology', reason: 'Stable tech giant with strong fundamentals' },
-        { symbol: 'MSFT', sector: 'Technology', reason: 'Diversified tech company with cloud growth' },
-        { symbol: 'JNJ', sector: 'Healthcare', reason: 'Defensive healthcare stock with dividend' },
-        { symbol: 'PG', sector: 'Consumer', reason: 'Consumer staples with stable earnings' },
-        { symbol: 'KO', sector: 'Consumer', reason: 'Beverage giant with global presence' },
-        { symbol: 'WMT', sector: 'Consumer', reason: 'Retail leader with defensive characteristics' },
-        { symbol: 'HD', sector: 'Consumer', reason: 'Home improvement leader with strong brand' },
-        { symbol: 'MCD', sector: 'Consumer', reason: 'Fast food leader with global reach' },
-        { symbol: 'DIS', sector: 'Consumer', reason: 'Entertainment giant with diverse revenue' },
-        { symbol: 'PEP', sector: 'Consumer', reason: 'Beverage company with strong cash flow' }
+        { symbol: 'AAPL', sector: 'Technology', industry: 'Consumer Electronics', reason: 'Stable tech giant with strong fundamentals' },
+        { symbol: 'MSFT', sector: 'Technology', industry: 'Software', reason: 'Diversified tech company with cloud growth' },
+        { symbol: 'JNJ', sector: 'Healthcare', industry: 'Pharmaceuticals', reason: 'Defensive healthcare stock with dividend' },
+        { symbol: 'PG', sector: 'Consumer', industry: 'Consumer Staples', reason: 'Consumer staples with stable earnings' },
+        { symbol: 'KO', sector: 'Consumer', industry: 'Beverages', reason: 'Beverage giant with global presence' },
+        { symbol: 'WMT', sector: 'Consumer', industry: 'Retail', reason: 'Retail leader with defensive characteristics' },
+        { symbol: 'HD', sector: 'Consumer', industry: 'Home Improvement', reason: 'Home improvement leader with strong brand' },
+        { symbol: 'MCD', sector: 'Consumer', industry: 'Restaurants', reason: 'Fast food leader with global reach' },
+        { symbol: 'DIS', sector: 'Consumer', industry: 'Entertainment', reason: 'Entertainment giant with diverse revenue' },
+        { symbol: 'PEP', sector: 'Consumer', industry: 'Beverages', reason: 'Beverage company with strong cash flow' }
       ],
       medium: [
-        { symbol: 'GOOGL', sector: 'Technology', reason: 'Tech leader with advertising dominance' },
-        { symbol: 'AMZN', sector: 'Consumer', reason: 'E-commerce and cloud services leader' },
-        { symbol: 'TSLA', sector: 'Consumer', reason: 'Electric vehicle and clean energy pioneer' },
-        { symbol: 'NVDA', sector: 'Technology', reason: 'AI and gaming chip leader' },
-        { symbol: 'META', sector: 'Technology', reason: 'Social media and metaverse company' },
-        { symbol: 'NFLX', sector: 'Consumer', reason: 'Streaming entertainment leader' },
-        { symbol: 'CRM', sector: 'Technology', reason: 'Cloud software and customer relations' },
-        { symbol: 'ADBE', sector: 'Technology', reason: 'Creative software and digital media' },
-        { symbol: 'PYPL', sector: 'Technology', reason: 'Digital payments and fintech leader' },
-        { symbol: 'UBER', sector: 'Technology', reason: 'Ride-sharing and delivery platform' }
+        { symbol: 'GOOGL', sector: 'Technology', industry: 'Internet Services', reason: 'Tech leader with advertising dominance' },
+        { symbol: 'AMZN', sector: 'Consumer', industry: 'E-commerce', reason: 'E-commerce and cloud services leader' },
+        { symbol: 'TSLA', sector: 'Consumer', industry: 'Automotive', reason: 'Electric vehicle and clean energy pioneer' },
+        { symbol: 'NVDA', sector: 'Technology', industry: 'Semiconductors', reason: 'AI and gaming chip leader' },
+        { symbol: 'META', sector: 'Technology', industry: 'Social Media', reason: 'Social media and metaverse company' },
+        { symbol: 'NFLX', sector: 'Consumer', industry: 'Entertainment', reason: 'Streaming entertainment leader' },
+        { symbol: 'CRM', sector: 'Technology', industry: 'Software', reason: 'Cloud software and customer relations' },
+        { symbol: 'ADBE', sector: 'Technology', industry: 'Software', reason: 'Creative software and digital media' },
+        { symbol: 'PYPL', sector: 'Technology', industry: 'Financial Technology', reason: 'Digital payments and fintech leader' },
+        { symbol: 'UBER', sector: 'Technology', industry: 'Transportation', reason: 'Ride-sharing and delivery platform' }
       ],
       high: [
-        { symbol: 'AMD', sector: 'Technology', reason: 'Semiconductor company with growth potential' },
-        { symbol: 'SPOT', sector: 'Consumer', reason: 'Music streaming with global expansion' },
-        { symbol: 'ZM', sector: 'Technology', reason: 'Video communications platform' },
-        { symbol: 'CRWD', sector: 'Technology', reason: 'Cybersecurity with high growth' },
-        { symbol: 'PLTR', sector: 'Technology', reason: 'Data analytics and AI platform' },
-        { symbol: 'SNOW', sector: 'Technology', reason: 'Cloud data warehousing company' },
-        { symbol: 'RBLX', sector: 'Technology', reason: 'Gaming and metaverse platform' },
-        { symbol: 'SQ', sector: 'Technology', reason: 'Digital payments and fintech' },
-        { symbol: 'SHOP', sector: 'Technology', reason: 'E-commerce platform for businesses' },
-        { symbol: 'TWLO', sector: 'Technology', reason: 'Cloud communications platform' }
+        { symbol: 'AMD', sector: 'Technology', industry: 'Semiconductors', reason: 'Semiconductor company with growth potential' },
+        { symbol: 'SPOT', sector: 'Consumer', industry: 'Entertainment', reason: 'Music streaming with global expansion' },
+        { symbol: 'ZM', sector: 'Technology', industry: 'Software', reason: 'Video communications platform' },
+        { symbol: 'CRWD', sector: 'Technology', industry: 'Cybersecurity', reason: 'Cybersecurity with high growth' },
+        { symbol: 'PLTR', sector: 'Technology', industry: 'Software', reason: 'Data analytics and AI platform' },
+        { symbol: 'SNOW', sector: 'Technology', industry: 'Software', reason: 'Cloud data warehousing company' },
+        { symbol: 'RBLX', sector: 'Technology', industry: 'Gaming', reason: 'Gaming and metaverse platform' },
+        { symbol: 'SQ', sector: 'Technology', industry: 'Financial Technology', reason: 'Digital payments and fintech' },
+        { symbol: 'SHOP', sector: 'Technology', industry: 'E-commerce', reason: 'E-commerce platform for businesses' },
+        { symbol: 'TWLO', sector: 'Technology', industry: 'Software', reason: 'Cloud communications platform' }
       ]
     };
 
@@ -213,7 +216,9 @@ Format your response as a JSON array with objects containing:
     return suitableStocks.slice(0, maxRecommendations).map(stock => ({
       ...stock,
       riskLevel,
-      confidence: 0.8
+      confidence: 0.8,
+      marketCap: 'large',
+      growthPotential: riskLevel === 'high' ? 'high' : riskLevel === 'medium' ? 'medium' : 'low'
     }));
   }
 
@@ -223,25 +228,25 @@ Format your response as a JSON array with objects containing:
     
     const mockRecommendations = {
       low: [
-        { symbol: 'AAPL', sector: 'Technology', reason: 'Stable tech giant suitable for conservative investors', riskLevel: 'low', confidence: 0.9 },
-        { symbol: 'MSFT', sector: 'Technology', reason: 'Diversified tech company with strong fundamentals', riskLevel: 'low', confidence: 0.85 },
-        { symbol: 'JNJ', sector: 'Healthcare', reason: 'Defensive healthcare stock with dividend', riskLevel: 'low', confidence: 0.8 },
-        { symbol: 'PG', sector: 'Consumer', reason: 'Consumer staples with stable earnings', riskLevel: 'low', confidence: 0.8 },
-        { symbol: 'KO', sector: 'Consumer', reason: 'Beverage giant with global presence', riskLevel: 'low', confidence: 0.75 }
+        { symbol: 'AAPL', sector: 'Technology', industry: 'Consumer Electronics', reason: 'Stable tech giant suitable for conservative investors', riskLevel: 'low', confidence: 0.9 },
+        { symbol: 'MSFT', sector: 'Technology', industry: 'Software', reason: 'Diversified tech company with strong fundamentals', riskLevel: 'low', confidence: 0.85 },
+        { symbol: 'JNJ', sector: 'Healthcare', industry: 'Pharmaceuticals', reason: 'Defensive healthcare stock with dividend', riskLevel: 'low', confidence: 0.8 },
+        { symbol: 'PG', sector: 'Consumer', industry: 'Consumer Staples', reason: 'Consumer staples with stable earnings', riskLevel: 'low', confidence: 0.8 },
+        { symbol: 'KO', sector: 'Consumer', industry: 'Beverages', reason: 'Beverage giant with global presence', riskLevel: 'low', confidence: 0.75 }
       ],
       medium: [
-        { symbol: 'GOOGL', sector: 'Technology', reason: 'Market leader with consistent growth', riskLevel: 'medium', confidence: 0.8 },
-        { symbol: 'AMZN', sector: 'Consumer', reason: 'E-commerce and cloud services leader', riskLevel: 'medium', confidence: 0.75 },
-        { symbol: 'TSLA', sector: 'Consumer', reason: 'Electric vehicle and clean energy pioneer', riskLevel: 'medium', confidence: 0.7 },
-        { symbol: 'NVDA', sector: 'Technology', reason: 'AI and gaming chip leader', riskLevel: 'medium', confidence: 0.75 },
-        { symbol: 'META', sector: 'Technology', reason: 'Social media and metaverse company', riskLevel: 'medium', confidence: 0.7 }
+        { symbol: 'GOOGL', sector: 'Technology', industry: 'Internet Services', reason: 'Market leader with consistent growth', riskLevel: 'medium', confidence: 0.8 },
+        { symbol: 'AMZN', sector: 'Consumer', industry: 'E-commerce', reason: 'E-commerce and cloud services leader', riskLevel: 'medium', confidence: 0.75 },
+        { symbol: 'TSLA', sector: 'Consumer', industry: 'Automotive', reason: 'Electric vehicle and clean energy pioneer', riskLevel: 'medium', confidence: 0.7 },
+        { symbol: 'NVDA', sector: 'Technology', industry: 'Semiconductors', reason: 'AI and gaming chip leader', riskLevel: 'medium', confidence: 0.75 },
+        { symbol: 'META', sector: 'Technology', industry: 'Social Media', reason: 'Social media and metaverse company', riskLevel: 'medium', confidence: 0.7 }
       ],
       high: [
-        { symbol: 'AMD', sector: 'Technology', reason: 'Semiconductor company with growth potential', riskLevel: 'high', confidence: 0.7 },
-        { symbol: 'SPOT', sector: 'Consumer', reason: 'Music streaming with global expansion', riskLevel: 'high', confidence: 0.65 },
-        { symbol: 'ZM', sector: 'Technology', reason: 'Video communications platform', riskLevel: 'high', confidence: 0.6 },
-        { symbol: 'CRWD', sector: 'Technology', reason: 'Cybersecurity with high growth', riskLevel: 'high', confidence: 0.65 },
-        { symbol: 'PLTR', sector: 'Technology', reason: 'Data analytics and AI platform', riskLevel: 'high', confidence: 0.6 }
+        { symbol: 'AMD', sector: 'Technology', industry: 'Semiconductors', reason: 'Semiconductor company with growth potential', riskLevel: 'high', confidence: 0.7 },
+        { symbol: 'SPOT', sector: 'Consumer', industry: 'Entertainment', reason: 'Music streaming with global expansion', riskLevel: 'high', confidence: 0.65 },
+        { symbol: 'ZM', sector: 'Technology', industry: 'Software', reason: 'Video communications platform', riskLevel: 'high', confidence: 0.6 },
+        { symbol: 'CRWD', sector: 'Technology', industry: 'Cybersecurity', reason: 'Cybersecurity with high growth', riskLevel: 'high', confidence: 0.65 },
+        { symbol: 'PLTR', sector: 'Technology', industry: 'Software', reason: 'Data analytics and AI platform', riskLevel: 'high', confidence: 0.6 }
       ]
     };
 

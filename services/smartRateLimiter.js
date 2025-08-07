@@ -193,10 +193,45 @@ class SmartRateLimiter {
     return symbols;
   }
 
-  // Placeholder for actual API call
+  // Fetch fresh data from Yahoo Finance API
   async fetchFreshData(symbol) {
-    // This would be replaced with actual Yahoo Finance API call
-    throw new Error('fetchFreshData not implemented');
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol.toUpperCase()}?interval=1d&range=1d`;
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const result = data.chart.result[0];
+      const quote = result.indicators.quote[0];
+      const timestamp = result.timestamp[result.timestamp.length - 1];
+      const close = quote.close[quote.close.length - 1];
+      const open = quote.open[quote.open.length - 1];
+      const high = quote.high[quote.high.length - 1];
+      const low = quote.low[quote.low.length - 1];
+      const volume = quote.volume[quote.volume.length - 1];
+
+      const change = close - open;
+      const changePercent = (change / open) * 100;
+
+      return {
+        symbol: symbol.toUpperCase(),
+        price: close,
+        change: change,
+        changePercent: `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`,
+        volume: volume,
+        high: high,
+        low: low,
+        open: open,
+        previousClose: open,
+        timestamp: new Date(timestamp * 1000).toISOString(),
+      };
+    } catch (error) {
+      console.error(`Error fetching fresh data for ${symbol}:`, error);
+      throw error;
+    }
   }
 
   // Get rate limit status

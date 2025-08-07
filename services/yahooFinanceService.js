@@ -59,12 +59,12 @@ class YahooFinanceService {
     }
   }
 
-  // Get detailed stock overview
+  // Get detailed stock overview with sector and industry
   async getStockOverview(symbol, userId = 'anonymous', portfolioSize = 0) {
     await this.checkRateLimit(userId, portfolioSize);
 
     try {
-      const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol.toUpperCase()}?modules=summaryDetail,financialData,defaultKeyStatistics`;
+      const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol.toUpperCase()}?modules=summaryDetail,financialData,defaultKeyStatistics,assetProfile`;
       const response = await fetch(url);
       
       if (!response.ok) {
@@ -76,17 +76,21 @@ class YahooFinanceService {
       const summaryDetail = summary.summaryDetail;
       const financialData = summary.financialData;
       const defaultKeyStatistics = summary.defaultKeyStatistics;
+      const assetProfile = summary.assetProfile;
 
       return {
         symbol: symbol.toUpperCase(),
-        name: symbol.toUpperCase(), // Yahoo doesn't provide name in this endpoint
+        name: assetProfile?.longBusinessSummary ? symbol.toUpperCase() : symbol.toUpperCase(), // Use symbol if no business summary
         marketCap: summaryDetail?.marketCap ? `${(summaryDetail.marketCap / 1e9).toFixed(2)}B` : 'N/A',
         peRatio: financialData?.forwardPE ? financialData.forwardPE.toFixed(2) : 'N/A',
         dividendYield: summaryDetail?.dividendYield ? `${(summaryDetail.dividendYield * 100).toFixed(2)}%` : 'N/A',
         beta: defaultKeyStatistics?.beta ? defaultKeyStatistics.beta.toFixed(2) : 'N/A',
-        sector: 'N/A', // Would need additional API call
-        industry: 'N/A', // Would need additional API call
-        description: 'Stock data from Yahoo Finance',
+        sector: assetProfile?.sector || 'N/A',
+        industry: assetProfile?.industry || 'N/A',
+        description: assetProfile?.longBusinessSummary || 'Stock data from Yahoo Finance',
+        website: assetProfile?.website || '',
+        employees: assetProfile?.fullTimeEmployees || 'N/A',
+        country: assetProfile?.country || 'N/A',
       };
     } catch (error) {
       console.error(`Error fetching overview for ${symbol}:`, error);

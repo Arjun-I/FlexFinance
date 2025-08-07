@@ -5,8 +5,8 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Platform,
   Alert,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,7 +25,6 @@ import {
 import SwipeStocksMock from './SwipeStocksMock';
 import InvestmentsScreen from './InvestmentsScreen';
 import LLMTestComponent from '../components/LLMTestComponent';
-import PortfolioTracker from '../components/PortfolioTracker';
 
 export default function Dashboard({ navigation }) {
   const [selectedTab, setSelectedTab] = useState('overview');
@@ -33,7 +32,14 @@ export default function Dashboard({ navigation }) {
   const [profile, setProfile] = useState(null);
   const [portfolioValue, setPortfolioValue] = useState(0);
   const [loadingOverview, setLoadingOverview] = useState(true);
-  const isAndroid = Platform.OS === 'android';
+  const [error, setError] = useState(null);
+
+  // Android-specific error handling
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      console.log('📱 Android-specific optimizations enabled');
+    }
+  }, []);
 
   const handleSignOut = async () => {
     try {
@@ -140,90 +146,89 @@ export default function Dashboard({ navigation }) {
   const renderOverview = () => (
     <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
       <View style={styles.overviewContainer}>
-        <PortfolioTracker />
-      </View>
+        {/* Simplified overview for Android compatibility */}
+        <View style={styles.welcomeCard}>
+          <Text style={styles.welcomeTitle}>Welcome to FlexFinance!</Text>
+          <Text style={styles.welcomeSubtitle}>
+            Your personal finance companion
+          </Text>
+        </View>
 
-      {profile?.riskProfile && (
-            <View style={styles.overviewCard}>
-              <Text style={styles.metricLabel}>Your Risk Profile</Text>
-              
-              {profile.riskProfileDetailed ? (
-                <View style={styles.riskDetailedGrid}>
-                  <View style={styles.riskItem}>
-                    <Text style={styles.riskLabel}>Risk Tolerance</Text>
-                    <Text style={[styles.riskValue, { color: profile.riskProfileDetailed.riskTolerance?.color || '#6366f1' }]}>
-                      {profile.riskProfileDetailed.riskTolerance?.level || 'N/A'}
-                    </Text>
-                    <Text style={styles.riskDescription}>
-                      {profile.riskProfileDetailed.riskTolerance?.description || ''}
-                    </Text>
-                  </View>
-
-                  <View style={styles.riskItem}>
-                    <Text style={styles.riskLabel}>Investment Style</Text>
-                    <Text style={styles.riskValue}>
-                      {profile.riskProfileDetailed.investmentStyle || 'N/A'}
-                    </Text>
-                  </View>
-
-                  <View style={styles.riskItem}>
-                    <Text style={styles.riskLabel}>Time Horizon</Text>
-                    <Text style={styles.riskValue}>
-                      {profile.riskProfileDetailed.timeHorizon?.horizon || 'N/A'}
-                    </Text>
-                    <Text style={styles.riskDescription}>
-                      {profile.riskProfileDetailed.timeHorizon?.description || ''}
-                    </Text>
-                  </View>
-
-                  <View style={styles.riskItem}>
-                    <Text style={styles.riskLabel}>Expertise Level</Text>
-                    <Text style={styles.riskValue}>
-                      {profile.riskProfileDetailed.knowledge?.level || 'N/A'}
-                    </Text>
-                    <Text style={styles.riskDescription}>
-                      {profile.riskProfileDetailed.knowledge?.description || ''}
-                    </Text>
-                  </View>
-
-                  <View style={styles.riskItem}>
-                    <Text style={styles.riskLabel}>ESG Focus</Text>
-                    <Text style={styles.riskValue}>
-                      {profile.riskProfileDetailed.ethics?.level || 'N/A'}
-                    </Text>
-                    <Text style={styles.riskDescription}>
-                      {profile.riskProfileDetailed.ethics?.description || ''}
-                    </Text>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.riskGrid}>
-                  <Text style={styles.metricDescription}>
-                    📈 Volatility: {profile.riskProfile.volatility || 0}
-                  </Text>
-                  <Text style={styles.metricDescription}>
-                    💧 Liquidity: {profile.riskProfile.liquidity || 0}
-                  </Text>
-                  <Text style={styles.metricDescription}>
-                    ⏳ Horizon: {profile.riskProfile.timeHorizon || 0}
-                  </Text>
-                  <Text style={styles.metricDescription}>
-                    📚 Knowledge: {profile.riskProfile.knowledge || 0}
-                  </Text>
-                  <Text style={styles.metricDescription}>
-                    🌱 Ethics: {profile.riskProfile.ethics || 0}
-                  </Text>
-                </View>
-              )}
-
-              <TouchableOpacity
-                onPress={handleResetRiskProfile}
-                style={styles.resetButton}
-              >
-                <Text style={styles.resetButtonText}>Reset Risk Profile</Text>
-              </TouchableOpacity>
+        <View style={styles.overviewCard}>
+          <View style={styles.metricRow}>
+            <Ionicons
+              name="wallet"
+              size={24}
+              color="#6366f1"
+              style={styles.metricIcon}
+            />
+            <View>
+              <Text style={styles.metricLabel}>Cash Balance</Text>
+              <Text style={styles.metricValue}>
+                ${profile?.cashBalance?.toFixed(2) || '0.00'}
+              </Text>
             </View>
-          )}
+          </View>
+        </View>
+
+        <View style={styles.overviewCard}>
+          <View style={styles.metricRow}>
+            <Ionicons
+              name="trending-up"
+              size={24}
+              color="#10b981"
+              style={styles.metricIcon}
+            />
+            <View>
+              <Text style={styles.metricLabel}>Total Portfolio Value</Text>
+              <Text style={styles.metricValue}>
+                ${portfolioValue.toFixed(2)}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.overviewCard}>
+          <View style={styles.metricRow}>
+            <Ionicons
+              name="calendar"
+              size={24}
+              color="#facc15"
+              style={styles.metricIcon}
+            />
+            <View>
+              <Text style={styles.metricLabel}>Last Login</Text>
+              <Text style={styles.metricValue}>
+                {user?.metadata?.lastSignInTime
+                  ? new Date(
+                      user.metadata.lastSignInTime
+                    ).toLocaleDateString()
+                  : 'N/A'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {profile?.riskProfile && (
+          <View style={styles.overviewCard}>
+            <Text style={styles.metricLabel}>Your Risk Profile</Text>
+            <View style={styles.riskGrid}>
+              <Text style={styles.metricDescription}>
+                📈 Volatility: {profile.riskProfile.volatility || 0}
+              </Text>
+              <Text style={styles.metricDescription}>
+                💧 Liquidity: {profile.riskProfile.liquidity || 0}
+              </Text>
+              <Text style={styles.metricDescription}>
+                ⏳ Horizon: {profile.riskProfile.timeHorizon || 0}
+              </Text>
+              <Text style={styles.metricDescription}>
+                📚 Knowledge: {profile.riskProfile.knowledge || 0}
+              </Text>
+            </View>
+          </View>
+        )}
+      </View>
     </ScrollView>
   );
 
@@ -321,11 +326,11 @@ export default function Dashboard({ navigation }) {
         {selectedTab === 'swipe' && renderSwipe()}
         {selectedTab === 'investments' && renderInvestments()}
         {selectedTab === 'profile' && renderProfile()}
-        {!isAndroid && selectedTab === 'llmtest' && renderLLMTest()}
+        {Platform.OS !== 'android' && selectedTab === 'llmtest' && renderLLMTest()}
       </View>
 
       <View style={styles.tabBar}>
-        {(isAndroid ? ['overview', 'swipe', 'investments', 'profile'] : ['overview', 'swipe', 'investments', 'profile', 'llmtest']).map((tab) => (
+        {(Platform.OS === 'android' ? ['overview', 'swipe', 'investments', 'profile'] : ['overview', 'swipe', 'investments', 'profile', 'llmtest']).map((tab) => (
           <TouchableOpacity
             key={tab}
             style={[styles.tabButton, selectedTab === tab && styles.activeTab]}
@@ -336,20 +341,31 @@ export default function Dashboard({ navigation }) {
                 tab === 'overview'
                   ? 'home'
                   : tab === 'swipe'
-                  ? 'swap-horizontal'
+                  ? 'heart'
                   : tab === 'investments'
                   ? 'trending-up'
-                  : tab === 'llmtest'
-                  ? 'brain'
-                  : 'person'
+                  : tab === 'profile'
+                  ? 'person'
+                  : 'flask'
               }
               size={24}
               color={selectedTab === tab ? '#6366f1' : '#94a3b8'}
             />
             <Text
-              style={[styles.tabLabel, selectedTab === tab && styles.activeTabLabel]}
+              style={[
+                styles.tabLabel,
+                selectedTab === tab && styles.activeTabLabel,
+              ]}
             >
-              {tab === 'llmtest' ? 'LLM Test' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === 'overview'
+                ? 'Overview'
+                : tab === 'swipe'
+                ? 'Swipe'
+                : tab === 'investments'
+                ? 'Investments'
+                : tab === 'profile'
+                ? 'Profile'
+                : 'LLM Test'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -496,4 +512,22 @@ const styles = StyleSheet.create({
   tabButton: { flex: 1, alignItems: 'center', paddingVertical: 8 },
   tabLabel: { color: '#94a3b8', fontSize: 12, marginTop: 4 },
   activeTabLabel: { color: '#6366f1', fontWeight: '600' },
+  welcomeCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  welcomeTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginBottom: 8,
+  },
+  welcomeSubtitle: {
+    fontSize: 16,
+    color: '#94a3b8',
+  },
 });

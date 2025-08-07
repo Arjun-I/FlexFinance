@@ -9,8 +9,8 @@ import {
   Dimensions,
   ScrollView,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
-import { Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   VictoryPie,
@@ -36,21 +36,14 @@ import yahooFinanceService from '../services/yahooFinanceService';
 
 const screenWidth = Dimensions.get('window').width;
 
-// Fallback mock ticker list with realistic prices
-const MOCK_TICKERS = {
-  AAPL: 190, TSLA: 270, MSFT: 310, NVDA: 500, AMZN: 140,
-  GOOGL: 2800, META: 350, NFLX: 450, AMD: 120, INTC: 45,
-  CRM: 220, ADBE: 550, PYPL: 60, UBER: 45, SPOT: 180, ZM: 70
-};
-
-// Industry mapping for better categorization
-const INDUSTRY_MAP = {
-  AAPL: 'Technology', TSLA: 'Automotive', MSFT: 'Technology', 
-  NVDA: 'Technology', AMZN: 'E-commerce', GOOGL: 'Technology',
-  META: 'Technology', NFLX: 'Entertainment', AMD: 'Technology',
-  INTC: 'Technology', CRM: 'Software', ADBE: 'Software',
-  PYPL: 'Financial', UBER: 'Transportation', SPOT: 'Entertainment',
-  ZM: 'Technology'
+// Enhanced industry mapping with fallbacks for common stocks
+const INDUSTRY_FALLBACKS = {
+  AAPL: 'Consumer Electronics', TSLA: 'Automotive', MSFT: 'Software', 
+  NVDA: 'Semiconductors', AMZN: 'E-commerce', GOOGL: 'Internet Services',
+  META: 'Social Media', NFLX: 'Entertainment', AMD: 'Semiconductors',
+  INTC: 'Semiconductors', CRM: 'Software', ADBE: 'Software',
+  PYPL: 'Financial Technology', UBER: 'Transportation', SPOT: 'Entertainment',
+  ZM: 'Software'
 };
 
 export default function PaperTrading() {
@@ -64,6 +57,15 @@ export default function PaperTrading() {
   const [error, setError] = useState(null);
   const [editingStock, setEditingStock] = useState(null);
   const [editShares, setEditShares] = useState('');
+  const [chartsEnabled, setChartsEnabled] = useState(true);
+
+  // Disable charts on Android to prevent crashes
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      setChartsEnabled(false);
+      console.log('📱 Charts disabled on Android to prevent crashes');
+    }
+  }, []);
 
   const fetchPortfolio = useCallback(async () => {
     const user = auth.currentUser;
@@ -103,109 +105,107 @@ export default function PaperTrading() {
   }, []);
 
   const buildIndustryData = (data) => {
-    try {
-      const industryCount = {};
-      let totalValue = 0;
+    const industryMap = {};
+    data.forEach(stock => {
+      const industry = stock.industry || INDUSTRY_FALLBACKS[stock.symbol] || 'Other';
+      if (industryMap[industry]) {
+        industryMap[industry] += stock.shares * (stock.currentPrice || stock.averagePrice || 0);
+      } else {
+        industryMap[industry] = stock.shares * (stock.currentPrice || stock.averagePrice || 0);
+      }
+    });
 
-      data.forEach((stock) => {
-        if (stock.shares > 0) { // Only include stocks with shares > 0
-          const industry = INDUSTRY_MAP[stock.symbol] || 'Other';
-          const value = stock.shares * (MOCK_TICKERS[stock.symbol] || 100);
-          industryCount[industry] = (industryCount[industry] || 0) + value;
-          totalValue += value;
-        }
-      });
+    const industryArray = Object.entries(industryMap).map(([name, value]) => ({
+      name,
+      value: parseFloat(value.toFixed(2))
+    })).filter(item => item.value > 0);
 
-      const industryData = Object.entries(industryCount).map(([industry, value]) => ({
-        x: industry,
-        y: totalValue > 0 ? (value / totalValue) * 100 : 0
-      }));
-
-      setIndustryData(industryData);
-    } catch (error) {
-      console.error('Error building industry data:', error);
-      setIndustryData([]);
-    }
+    setIndustryData(industryArray);
   };
 
   const buildValueHistory = async (data, userId, cashBalance) => {
     try {
-      const MAX_HISTORY = 30;
       let totalValue = cashBalance;
-
-      data.forEach((stock) => {
-        if (stock.shares > 0) { // Only include stocks with shares > 0
-          totalValue += stock.shares * (MOCK_TICKERS[stock.symbol] || 100);
-        }
-      });
-
-      const historyEntry = {
-        timestamp: Date.now(),
-        totalValue: totalValue
-      };
-
-      // Get existing history
-      const historySnap = await getDocs(collection(db, 'users', userId, 'valueHistory'));
-      let history = historySnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      // Add new entry
-      history.push(historyEntry);
-      
-      // Keep only last MAX_HISTORY entries
-      if (history.length > MAX_HISTORY) {
-        const toDelete = history.slice(0, history.length - MAX_HISTORY);
-        for (const entry of toDelete) {
-          if (entry.id) {
-            await deleteDoc(doc(db, 'users', userId, 'valueHistory', entry.id));
-          }
+      // Get real-time prices for portfolio stocks
+      if (data.length > 0) {
+        const symbols = data.map(stock => stock.symbol);
+        try {
+          const quotes = await yahooFinanceService.getMultipleQuotes(symbols, userId, data.length);
+          
+          data.forEach(stock => {
+            const quote = quotes.find(q => q.symbol === stock.symbol);
+            if (quote && quote.price) {
+              totalValue += stock.shares * quote.price;
+            } else {
+              // Fallback to stored price
+              totalValue += stock.shares * (stock.currentPrice || stock.averagePrice || 0);
+            }
+          });
+        } catch (error) {
+          console.error('Error fetching real-time prices:', error);
+          // Use stored prices as fallback
+          data.forEach(stock => {
+            totalValue += stock.shares * (stock.currentPrice || stock.averagePrice || 0);
+          });
         }
-        history = history.slice(-MAX_HISTORY);
       }
 
-      // Save new entry
-      await addDoc(collection(db, 'users', userId, 'valueHistory'), historyEntry);
-      
-      setValueHistory(history);
+      const today = new Date();
+      const newHistoryEntry = {
+        date: today.toISOString().split('T')[0],
+        value: parseFloat(totalValue.toFixed(2))
+      };
+
+      setValueHistory(prev => {
+        const filtered = prev.filter(entry => entry.date !== newHistoryEntry.date);
+        return [...filtered, newHistoryEntry].sort((a, b) => new Date(a.date) - new Date(b.date));
+      });
     } catch (error) {
       console.error('Error building value history:', error);
-      setValueHistory([]);
     }
   };
 
   const fetchStockPrice = async (ticker) => {
-    const user = auth.currentUser;
-    const userId = user?.uid || 'anonymous';
-    
     try {
-      // Try to get real price from Yahoo Finance with smart rate limiting
-      const quote = await yahooFinanceService.getStockQuote(ticker.toUpperCase(), userId, portfolio.length);
+      const upperTicker = ticker.toUpperCase();
+      const quote = await yahooFinanceService.getStockQuote(upperTicker, auth.currentUser?.uid, portfolio.length);
       return quote.price;
     } catch (error) {
-      console.log(`Using mock price for ${ticker}: ${error.message}`);
-      // Fallback to mock price
-      const upperTicker = ticker.toUpperCase();
-      return MOCK_TICKERS[upperTicker] || 100;
+      console.error('Error fetching stock price:', error);
+      // Return a reasonable fallback price
+      return 100;
     }
   };
 
   const buyStock = async () => {
-    if (!ticker || !shares) {
+    if (!ticker.trim() || !shares.trim()) {
       Alert.alert('Error', 'Please enter both ticker and shares');
       return;
     }
 
+    const sharesNum = parseFloat(shares);
+    if (isNaN(sharesNum) || sharesNum <= 0) {
+      Alert.alert('Error', 'Please enter a valid number of shares');
+      return;
+    }
+
+    const upperTicker = ticker.toUpperCase();
     const user = auth.currentUser;
     if (!user) {
-      Alert.alert('Error', 'Please log in to trade');
+      Alert.alert('Error', 'User not authenticated');
       return;
     }
 
     try {
-      const upperTicker = ticker.toUpperCase();
-      const shareCount = parseInt(shares);
-      const price = await fetchStockPrice(upperTicker);
-      const totalCost = shareCount * price;
+      setLoading(true);
 
+      // Fetch real stock data including sector and industry
+      const stockOverview = await yahooFinanceService.getStockOverview(upperTicker, user.uid, portfolio.length);
+      const price = await fetchStockPrice(upperTicker);
+      
+      const totalCost = sharesNum * price;
+      
       if (totalCost > cash) {
         Alert.alert('Error', 'Insufficient funds');
         return;
@@ -216,45 +216,64 @@ export default function PaperTrading() {
       
       if (existingStock) {
         // Update existing stock
-        const newShares = existingStock.shares + shareCount;
+        const newShares = existingStock.shares + sharesNum;
         const newTotalCost = existingStock.totalCost + totalCost;
         const newAveragePrice = newTotalCost / newShares;
-        
+
         await updateDoc(doc(db, 'users', user.uid, 'portfolio', existingStock.id), {
           shares: newShares,
           totalCost: newTotalCost,
           averagePrice: newAveragePrice,
           lastUpdated: new Date()
         });
+
+        // Update cash balance
+        await updateDoc(doc(db, 'users', user.uid), {
+          cashBalance: cash - totalCost
+        });
+
+        setCash(cash - totalCost);
+        setPortfolio(prev => prev.map(stock => 
+          stock.id === existingStock.id 
+            ? { ...stock, shares: newShares, totalCost: newTotalCost, averagePrice: newAveragePrice }
+            : stock
+        ));
       } else {
         // Add new stock
-        const stockData = {
+        const newStock = {
           symbol: upperTicker,
-          shares: shareCount,
+          shares: sharesNum,
           averagePrice: price,
           totalCost: totalCost,
-          industry: INDUSTRY_MAP[upperTicker] || 'Other',
+          sector: stockOverview.sector || 'Technology',
+          industry: stockOverview.industry || INDUSTRY_FALLBACKS[upperTicker] || 'Other',
           datePurchased: new Date(),
           lastUpdated: new Date()
         };
+
+        const docRef = await addDoc(collection(db, 'users', user.uid, 'portfolio'), newStock);
         
-        await addDoc(collection(db, 'users', user.uid, 'portfolio'), stockData);
+        // Update cash balance
+        await updateDoc(doc(db, 'users', user.uid), {
+          cashBalance: cash - totalCost
+        });
+
+        setCash(cash - totalCost);
+        setPortfolio(prev => [...prev, { id: docRef.id, ...newStock }]);
       }
 
-      // Update cash balance
-      await updateDoc(doc(db, 'users', user.uid), {
-        cashBalance: cash - totalCost
-      });
-
-      setCash(cash - totalCost);
       setTicker('');
       setShares('');
-      fetchPortfolio();
+      Alert.alert('Success', `Bought ${sharesNum} shares of ${upperTicker} at $${price.toFixed(2)}`);
       
-      Alert.alert('Success', `Bought ${shareCount} shares of ${upperTicker} at $${price}`);
+      // Refresh portfolio data
+      buildIndustryData(portfolio);
+      await buildValueHistory(portfolio, user.uid, cash - totalCost);
     } catch (error) {
       console.error('Error buying stock:', error);
       Alert.alert('Error', 'Failed to buy stock. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -340,66 +359,142 @@ export default function PaperTrading() {
     <View style={styles.portfolioItem}>
       <View style={styles.stockInfo}>
         <Text style={styles.symbol}>{item.symbol}</Text>
-        <Text style={styles.shares}>{item.shares} shares @ ${item.averagePrice?.toFixed(2)}</Text>
-        <Text style={styles.industry}>{item.industry}</Text>
+        <Text style={styles.shares}>{item.shares} shares</Text>
+        <Text style={styles.avgPrice}>Avg: ${item.averagePrice?.toFixed(2) || '0.00'}</Text>
       </View>
       <View style={styles.priceInfo}>
         <Text style={styles.currentValue}>
-          ${(item.shares * (MOCK_TICKERS[item.symbol] || 100)).toFixed(2)}
+          ${(item.shares * (item.currentPrice || item.averagePrice || 100)).toFixed(2)}
         </Text>
         <Text style={styles.totalValue}>
-          Total: ${item.totalCost?.toFixed(2)}
+          Total: ${item.totalCost?.toFixed(2) || '0.00'}
         </Text>
       </View>
-      <View style={styles.actionButtons}>
-        {editingStock?.id === item.id ? (
-          <View style={styles.editContainer}>
-            <TextInput
-              style={styles.editInput}
-              value={editShares}
-              onChangeText={setEditShares}
-              keyboardType="numeric"
-              placeholder="Shares"
-              placeholderTextColor="#94a3b8"
-            />
-            <TouchableOpacity
-              style={styles.saveButton}
-              onPress={() => updateStockShares(item, parseInt(editShares) || 0)}
-            >
-              <Ionicons name="checkmark" size={16} color="#10b981" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => {
-                setEditingStock(null);
-                setEditShares('');
-              }}
-            >
-              <Ionicons name="close" size={16} color="#ef4444" />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={() => {
-                setEditingStock(item);
-                setEditShares(item.shares.toString());
-              }}
-            >
-              <Ionicons name="pencil" size={16} color="#6366f1" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.sellButton}
-              onPress={() => sellStock(item)}
-            >
-              <Ionicons name="trash" size={16} color="#ef4444" />
-            </TouchableOpacity>
-          </View>
-        )}
+      <View style={styles.actions}>
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() => {
+            setEditingStock(item);
+            setEditShares(item.shares.toString());
+          }}
+        >
+          <Ionicons name="pencil" size={16} color="#6366f1" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.sellButton}
+          onPress={() => sellStock(item)}
+        >
+          <Ionicons name="close-circle" size={16} color="#ef4444" />
+        </TouchableOpacity>
       </View>
     </View>
   );
+
+  const renderCharts = () => {
+    if (!chartsEnabled) {
+      return (
+        <View style={styles.chartsContainer}>
+          <Text style={styles.chartTitle}>Portfolio Overview</Text>
+          <View style={styles.fallbackContainer}>
+            <Ionicons name="bar-chart" size={48} color="#6366f1" />
+            <Text style={styles.fallbackLabel}>Charts Disabled</Text>
+            <Text style={styles.fallbackValue}>
+              Charts are temporarily disabled on this device for better performance.
+            </Text>
+            <Text style={styles.fallbackValue}>
+              Portfolio value: ${portfolio.reduce((total, item) => 
+                total + (item.shares * (item.currentPrice || item.averagePrice || 0)), 0).toFixed(2)
+              }
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    try {
+      return (
+        <View style={styles.chartsContainer}>
+          <Text style={styles.chartTitle}>Portfolio Allocation</Text>
+          {industryData.length > 0 ? (
+            <View style={styles.chartWrapper}>
+              <VictoryPie
+                data={industryData}
+                x="name"
+                y="value"
+                colorScale="qualitative"
+                width={screenWidth - 40}
+                height={200}
+                padding={50}
+                labels={({ datum }) => `${datum.name}\n$${datum.value.toFixed(0)}`}
+                labelRadius={({ radius }) => radius - 30}
+                style={{
+                  labels: { fontSize: 10, fill: '#ffffff' }
+                }}
+              />
+            </View>
+          ) : (
+            <Text style={styles.noDataText}>No portfolio data to display</Text>
+          )}
+
+          <Text style={styles.chartTitle}>Portfolio Value History</Text>
+          {valueHistory.length > 1 ? (
+            <View style={styles.chartWrapper}>
+              <VictoryChart
+                width={screenWidth - 40}
+                height={200}
+                padding={{ top: 20, bottom: 40, left: 60, right: 40 }}
+                theme={VictoryTheme.material}
+              >
+                <VictoryAxis
+                  dependentAxis
+                  tickFormat={(t) => `$${(t / 1000).toFixed(0)}k`}
+                  style={{
+                    axis: { stroke: '#ffffff' },
+                    tickLabels: { fill: '#ffffff', fontSize: 10 }
+                  }}
+                />
+                <VictoryAxis
+                  style={{
+                    axis: { stroke: '#ffffff' },
+                    tickLabels: { fill: '#ffffff', fontSize: 10 }
+                  }}
+                />
+                <VictoryLine
+                  data={valueHistory}
+                  x="date"
+                  y="value"
+                  style={{
+                    data: { stroke: '#10b981', strokeWidth: 3 },
+                  }}
+                />
+              </VictoryChart>
+            </View>
+          ) : (
+            <Text style={styles.noDataText}>No value history to display</Text>
+          )}
+        </View>
+      );
+    } catch (error) {
+      console.error('Error rendering charts:', error);
+      return (
+        <View style={styles.chartsContainer}>
+          <Text style={styles.chartTitle}>Portfolio Overview</Text>
+          <View style={styles.fallbackContainer}>
+            <Ionicons name="alert-circle" size={48} color="#f59e0b" />
+            <Text style={styles.fallbackLabel}>Charts Unavailable</Text>
+            <Text style={styles.fallbackValue}>
+              Charts are temporarily unavailable. Please try again later.
+            </Text>
+            <Text style={styles.fallbackValue}>
+              Portfolio value: ${portfolio.reduce((total, item) => 
+                total + (item.shares * (item.currentPrice || item.averagePrice || 0)), 0).toFixed(2)
+              }
+            </Text>
+          </View>
+        </View>
+      );
+    }
+  };
 
   useEffect(() => {
     fetchPortfolio();
@@ -483,81 +578,7 @@ export default function PaperTrading() {
       </View>
 
       {/* Charts */}
-      {industryData.length > 0 && (
-        <View style={styles.chartSection}>
-          <Text style={styles.sectionTitle}>Portfolio by Industry</Text>
-          <View style={styles.chartContainer}>
-            <VictoryPie
-              data={industryData}
-              colorScale="qualitative"
-              width={300}
-              height={300}
-              theme={VictoryTheme.material}
-              style={{
-                labels: {
-                  fill: '#ffffff',
-                  fontSize: 12,
-                  fontWeight: 'bold',
-                },
-              }}
-              labelComponent={
-                <VictoryTooltip
-                  style={{ fill: '#ffffff' }}
-                  flyoutStyle={{
-                    stroke: '#1e293b',
-                    fill: '#1e293b',
-                  }}
-                />
-              }
-            />
-          </View>
-        </View>
-      )}
-
-      {valueHistory.length > 0 && (
-        <View style={styles.chartSection}>
-          <Text style={styles.sectionTitle}>Portfolio Value History</Text>
-          <View style={styles.chartContainer}>
-            <VictoryChart
-              width={350}
-              height={250}
-              theme={VictoryTheme.material}
-              style={{
-                background: { fill: '#1e293b' },
-              }}
-            >
-              <VictoryAxis
-                dependentAxis
-                style={{
-                  axis: { stroke: '#64748b' },
-                  grid: { stroke: '#334155' },
-                  tickLabels: { fill: '#e2e8f0', fontSize: 10 },
-                }}
-                tickFormat={(t) => `$${(t / 1000).toFixed(0)}k`}
-              />
-              <VictoryAxis
-                style={{
-                  axis: { stroke: '#64748b' },
-                  tickLabels: { fill: '#e2e8f0', fontSize: 10 },
-                }}
-                tickFormat={(t) => new Date(t).toLocaleDateString()}
-              />
-              <VictoryLine
-                data={valueHistory}
-                x="timestamp"
-                y="totalValue"
-                style={{
-                  data: { stroke: '#10b981', strokeWidth: 3 },
-                }}
-                animate={{
-                  duration: 1000,
-                  onLoad: { duration: 500 },
-                }}
-              />
-            </VictoryChart>
-          </View>
-        </View>
-      )}
+      {renderCharts()}
       </ScrollView>
     </View>
   );
@@ -671,7 +692,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#94a3b8',
   },
-  industry: {
+  avgPrice: {
     fontSize: 12,
     color: '#64748b',
   },
@@ -688,13 +709,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#94a3b8',
   },
-  actionButtons: {
+  actions: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    gap: 8,
   },
   editButton: {
     padding: 8,
@@ -743,24 +760,44 @@ const styles = StyleSheet.create({
   },
   fallbackContainer: {
     width: '100%',
-  },
-  fallbackItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    padding: 20,
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    marginTop: 20,
+    marginBottom: 20,
   },
   fallbackLabel: {
-    color: '#e2e8f0',
-    fontSize: 14,
-    flex: 1,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginTop: 10,
+    marginBottom: 8,
   },
   fallbackValue: {
-    color: '#10b981',
-    fontSize: 16,
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  chartsContainer: {
+    marginTop: 20,
+  },
+  chartTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
+    color: '#ffffff',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  chartWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  noDataText: {
+    color: '#94a3b8',
+    fontSize: 16,
+    textAlign: 'center',
   },
 });

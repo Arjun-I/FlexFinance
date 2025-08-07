@@ -11,6 +11,9 @@ import stockGenerationService from '../services/stockGenerationService';
 
 const { width } = Dimensions.get('window');
 
+// Daily swipe limit configuration
+const DAILY_SWIPE_LIMIT = 10;
+
 // Mock stock data for testing
 const MOCK_STOCKS = [
   {
@@ -19,6 +22,7 @@ const MOCK_STOCKS = [
     price: '$190.50',
     change: '+2.3%',
     sector: 'Technology',
+    industry: 'Consumer Electronics',
     reason: 'Stable tech giant with strong fundamentals',
     riskLevel: 'low',
     confidence: 0.9
@@ -29,6 +33,7 @@ const MOCK_STOCKS = [
     price: '$310.25',
     change: '+1.8%',
     sector: 'Technology',
+    industry: 'Software',
     reason: 'Diversified tech company with cloud growth',
     riskLevel: 'low',
     confidence: 0.85
@@ -39,6 +44,7 @@ const MOCK_STOCKS = [
     price: '$2800.00',
     change: '+3.1%',
     sector: 'Technology',
+    industry: 'Internet Services',
     reason: 'Tech leader with advertising dominance',
     riskLevel: 'medium',
     confidence: 0.8
@@ -49,6 +55,7 @@ const MOCK_STOCKS = [
     price: '$140.75',
     change: '+1.5%',
     sector: 'Consumer',
+    industry: 'E-commerce',
     reason: 'E-commerce and cloud services leader',
     riskLevel: 'medium',
     confidence: 0.75
@@ -58,7 +65,8 @@ const MOCK_STOCKS = [
     name: 'Tesla Inc.',
     price: '$270.30',
     change: '+4.2%',
-    sector: 'Automotive',
+    sector: 'Consumer',
+    industry: 'Automotive',
     reason: 'Electric vehicle and clean energy pioneer',
     riskLevel: 'high',
     confidence: 0.7
@@ -69,6 +77,7 @@ const MOCK_STOCKS = [
     price: '$500.00',
     change: '+5.8%',
     sector: 'Technology',
+    industry: 'Semiconductors',
     reason: 'AI and gaming chip leader',
     riskLevel: 'high',
     confidence: 0.75
@@ -79,6 +88,7 @@ const MOCK_STOCKS = [
     price: '$350.40',
     change: '+2.7%',
     sector: 'Technology',
+    industry: 'Social Media',
     reason: 'Social media and metaverse company',
     riskLevel: 'medium',
     confidence: 0.7
@@ -88,7 +98,8 @@ const MOCK_STOCKS = [
     name: 'Netflix Inc.',
     price: '$450.20',
     change: '+1.9%',
-    sector: 'Entertainment',
+    sector: 'Consumer',
+    industry: 'Entertainment',
     reason: 'Streaming entertainment leader',
     riskLevel: 'medium',
     confidence: 0.65
@@ -99,19 +110,21 @@ const MOCK_STOCKS = [
     price: '$165.80',
     change: '+0.8%',
     sector: 'Healthcare',
-    reason: 'Stable healthcare conglomerate',
+    industry: 'Pharmaceuticals',
+    reason: 'Defensive healthcare stock with dividend',
     riskLevel: 'low',
     confidence: 0.8
   },
   {
-    symbol: 'JPM',
-    name: 'JPMorgan Chase & Co.',
-    price: '$180.90',
-    change: '+1.2%',
-    sector: 'Financial',
-    reason: 'Leading financial services company',
-    riskLevel: 'medium',
-    confidence: 0.75
+    symbol: 'PG',
+    name: 'Procter & Gamble Co.',
+    price: '$145.20',
+    change: '+0.5%',
+    sector: 'Consumer',
+    industry: 'Consumer Staples',
+    reason: 'Consumer staples with stable earnings',
+    riskLevel: 'low',
+    confidence: 0.8
   }
 ];
 
@@ -122,8 +135,88 @@ export default function SwipeStocksMock() {
   const [rejectedStocks, setRejectedStocks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('swipe'); // 'swipe', 'liked', 'rejected'
+  const [swipeCount, setSwipeCount] = useState(0);
+  const [dailyLimit, setDailyLimit] = useState(DAILY_SWIPE_LIMIT);
+  const [swipeLimitReached, setSwipeLimitReached] = useState(false);
   const position = useRef(new Animated.ValueXY()).current;
   const animating = useRef(false);
+
+  // Check and update daily swipe count
+  const checkDailySwipeLimit = async () => {
+    const user = auth.currentUser;
+    if (!user) return { canSwipe: false, reason: 'User not authenticated' };
+
+    try {
+      const today = new Date().toDateString();
+      const swipeDataRef = doc(db, 'users', user.uid, 'swipeData', 'daily');
+      const swipeDataDoc = await getDoc(swipeDataRef);
+
+      if (swipeDataDoc.exists()) {
+        const data = swipeDataDoc.data();
+        const lastSwipeDate = data.lastSwipeDate;
+        const currentCount = data.swipeCount || 0;
+
+        // Reset count if it's a new day
+        if (lastSwipeDate !== today) {
+          await updateDoc(swipeDataRef, {
+            swipeCount: 0,
+            lastSwipeDate: today
+          });
+          setSwipeCount(0);
+          setSwipeLimitReached(false);
+          return { canSwipe: true, remaining: DAILY_SWIPE_LIMIT };
+        }
+
+        // Check if limit reached
+        if (currentCount >= DAILY_SWIPE_LIMIT) {
+          setSwipeCount(currentCount);
+          setSwipeLimitReached(true);
+          return { canSwipe: false, reason: 'Daily swipe limit reached', remaining: 0 };
+        }
+
+        setSwipeCount(currentCount);
+        setSwipeLimitReached(false);
+        return { canSwipe: true, remaining: DAILY_SWIPE_LIMIT - currentCount };
+      } else {
+        // First time swiping today
+        await setDoc(swipeDataRef, {
+          swipeCount: 0,
+          lastSwipeDate: today
+        });
+        setSwipeCount(0);
+        setSwipeLimitReached(false);
+        return { canSwipe: true, remaining: DAILY_SWIPE_LIMIT };
+      }
+    } catch (error) {
+      console.error('Error checking swipe limit:', error);
+      return { canSwipe: true, remaining: DAILY_SWIPE_LIMIT }; // Allow swiping if check fails
+    }
+  };
+
+  // Increment swipe count
+  const incrementSwipeCount = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      const today = new Date().toDateString();
+      const swipeDataRef = doc(db, 'users', user.uid, 'swipeData', 'daily');
+      
+      await updateDoc(swipeDataRef, {
+        swipeCount: swipeCount + 1,
+        lastSwipeDate: today
+      });
+
+      setSwipeCount(prev => prev + 1);
+      
+      // Check if limit reached after increment
+      if (swipeCount + 1 >= DAILY_SWIPE_LIMIT) {
+        setSwipeLimitReached(true);
+      }
+    } catch (error) {
+      console.error('Error incrementing swipe count:', error);
+    }
+  };
 
   const loadStocks = async () => {
     const user = auth.currentUser;
@@ -133,6 +226,10 @@ export default function SwipeStocksMock() {
     }
 
     try {
+      // Check daily swipe limit first
+      const limitCheck = await checkDailySwipeLimit();
+      setDailyLimit(limitCheck.remaining);
+
       // Load liked stocks
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       const userLikedStocks = userDoc.data()?.likedStocks || [];
@@ -170,6 +267,7 @@ export default function SwipeStocksMock() {
       setCurrentIndex(0);
       
       console.log(`Loaded ${availableStocks.length} available stocks with LLM summaries`);
+      console.log(`Daily swipe limit: ${limitCheck.remaining}/${DAILY_SWIPE_LIMIT} remaining`);
     } catch (error) {
       console.error('Error loading stocks:', error);
       // Fallback to all stocks if there's an error
@@ -343,31 +441,8 @@ export default function SwipeStocksMock() {
     loadStocks();
   }, []);
 
-  const handleSwipe = async (dir) => {
-    if (animating.current || currentIndex >= stocks.length) return;
-    
-    animating.current = true;
-    const stock = stocks[currentIndex];
-
-    try {
-      if (dir === 'right') {
-        await addLikedStock(stock);
-      } else if (dir === 'left') {
-        await rejectStock(stock);
-      }
-
-      // Move to next stock
-      setCurrentIndex(prev => prev + 1);
-      position.setValue({ x: 0, y: 0 });
-    } catch (error) {
-      console.error('Error handling swipe:', error);
-    } finally {
-      animating.current = false;
-    }
-  };
-
   const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => !animating.current,
+    onStartShouldSetPanResponder: () => true,
     onPanResponderGrant: () => {
       position.setOffset({
         x: position.x._value,
@@ -381,10 +456,13 @@ export default function SwipeStocksMock() {
       position.flattenOffset();
       
       if (gesture.dx > 120) {
+        // Swipe right (like)
         handleSwipe('right');
       } else if (gesture.dx < -120) {
+        // Swipe left (reject)
         handleSwipe('left');
       } else {
+        // Return to center
         Animated.spring(position, {
           toValue: { x: 0, y: 0 },
           useNativeDriver: false,
@@ -392,6 +470,89 @@ export default function SwipeStocksMock() {
       }
     },
   });
+
+  const handleSwipe = async (dir) => {
+    if (animating.current) return;
+    animating.current = true;
+
+    try {
+      // Check daily swipe limit before allowing swipe
+      const limitCheck = await checkDailySwipeLimit();
+      if (!limitCheck.canSwipe) {
+        Alert.alert(
+          'Daily Limit Reached', 
+          `You've reached your daily limit of ${DAILY_SWIPE_LIMIT} swipes. Come back tomorrow for more recommendations!`,
+          [{ text: 'OK' }]
+        );
+        animating.current = false;
+        return;
+      }
+
+      const currentStock = stocks[currentIndex];
+      if (!currentStock) {
+        animating.current = false;
+        return;
+      }
+
+      // Increment swipe count
+      await incrementSwipeCount();
+
+      if (dir === 'right') {
+        // Like the stock
+        await addLikedStock(currentStock);
+        console.log(`✅ Liked ${currentStock.symbol} - Swipe ${swipeCount + 1}/${DAILY_SWIPE_LIMIT}`);
+      } else if (dir === 'left') {
+        // Reject the stock
+        await rejectStock(currentStock);
+        console.log(`❌ Rejected ${currentStock.symbol} - Swipe ${swipeCount + 1}/${DAILY_SWIPE_LIMIT}`);
+      }
+
+      // Move to next stock
+      setCurrentIndex(prev => {
+        const nextIndex = prev + 1;
+        if (nextIndex >= stocks.length) {
+          // No more stocks to swipe
+          Alert.alert(
+            'No More Stocks', 
+            'You\'ve swiped through all available stocks for today. Check back tomorrow for new recommendations!',
+            [{ text: 'OK' }]
+          );
+          return prev;
+        }
+        return nextIndex;
+      });
+
+      // Reset position
+      position.setValue({ x: 0, y: 0 });
+    } catch (error) {
+      console.error('Error handling swipe:', error);
+    } finally {
+      animating.current = false;
+    }
+  };
+
+  const renderSwipeButtons = () => {
+    if (swipeLimitReached || currentIndex >= stocks.length) {
+      return null;
+    }
+
+    return (
+      <View style={styles.swipeButtons}>
+        <TouchableOpacity
+          style={[styles.swipeButton, styles.rejectButton]}
+          onPress={() => handleSwipe('left')}
+        >
+          <Ionicons name="close" size={24} color="#ef4444" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.swipeButton, styles.likeButton]}
+          onPress={() => handleSwipe('right')}
+        >
+          <Ionicons name="heart" size={24} color="#10b981" />
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const getRiskColor = (riskLevel) => {
     switch (riskLevel) {
@@ -416,17 +577,20 @@ export default function SwipeStocksMock() {
       return (
         <View style={styles.noMoreStocks}>
           <Ionicons name="checkmark-circle" size={64} color="#10b981" />
-          <Text style={styles.noMoreStocksText}>No more stocks to swipe!</Text>
-          <Text style={styles.noMoreStocksSubtext}>Check your liked and rejected stocks</Text>
-          <TouchableOpacity style={styles.refreshButton} onPress={loadStocks}>
-            <Ionicons name="refresh" size={20} color="#6366f1" />
-            <Text style={styles.refreshButtonText}>Refresh Stocks</Text>
-          </TouchableOpacity>
+          <Text style={styles.noMoreStocksTitle}>No More Stocks</Text>
+          <Text style={styles.noMoreStocksSubtitle}>
+            You've swiped through all available stocks for today.
+          </Text>
+          <Text style={styles.noMoreStocksSubtitle}>
+            Check back tomorrow for new recommendations!
+          </Text>
         </View>
       );
     }
 
     const stock = stocks[currentIndex];
+    if (!stock) return null;
+
     const rotate = position.x.interpolate({
       inputRange: [-width / 2, 0, width / 2],
       outputRange: ['-10deg', '0deg', '10deg'],
@@ -436,7 +600,7 @@ export default function SwipeStocksMock() {
       <Animated.View
         {...panResponder.panHandlers}
         style={[
-          styles.card,
+          styles.stockCard,
           {
             transform: [
               { translateX: position.x },
@@ -447,81 +611,62 @@ export default function SwipeStocksMock() {
         ]}
       >
         <View style={styles.cardHeader}>
-          <Text style={styles.symbol}>{stock.symbol}</Text>
-          <Text style={styles.name}>{stock.name}</Text>
-        </View>
-        
-        <View style={styles.priceSection}>
-          <Text style={styles.price}>{stock.price}</Text>
-          <Text style={[styles.change, { color: stock.change.startsWith('+') ? '#10b981' : '#ef4444' }]}>
-            {stock.change}
-          </Text>
+          <View style={styles.stockInfo}>
+            <Text style={styles.symbol}>{stock.symbol}</Text>
+            <Text style={styles.name}>{stock.name}</Text>
+          </View>
+          <View style={styles.priceInfo}>
+            <Text style={styles.price}>{stock.price}</Text>
+            <Text style={[styles.change, { color: stock.change.startsWith('+') ? '#10b981' : '#ef4444' }]}>
+              {stock.change}
+            </Text>
+          </View>
         </View>
 
-        <View style={styles.infoSection}>
-          <View style={styles.infoRow}>
-            <Text style={styles.label}>Sector:</Text>
-            <Text style={styles.value}>{stock.sector}</Text>
+        <View style={styles.cardBody}>
+          <View style={styles.sectorInfo}>
+            <Text style={styles.sectorLabel}>Sector</Text>
+            <Text style={styles.sectorValue}>{stock.sector}</Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.label}>Risk Level:</Text>
+          {stock.industry && (
+            <View style={styles.sectorInfo}>
+              <Text style={styles.sectorLabel}>Industry</Text>
+              <Text style={styles.sectorValue}>{stock.industry}</Text>
+            </View>
+          )}
+          <View style={styles.reasonContainer}>
+            <Text style={styles.reasonLabel}>Why this stock?</Text>
+            <Text style={styles.reasonText}>{stock.reason}</Text>
+          </View>
+        </View>
+
+        <View style={styles.cardFooter}>
+          <View style={styles.riskContainer}>
+            <Text style={styles.riskLabel}>Risk Level</Text>
             <View style={[styles.riskBadge, { backgroundColor: getRiskColor(stock.riskLevel) }]}>
               <Text style={styles.riskText}>{stock.riskLevel.toUpperCase()}</Text>
             </View>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.label}>Confidence:</Text>
-            <Text style={styles.value}>{Math.round(stock.confidence * 100)}%</Text>
+          <View style={styles.confidenceContainer}>
+            <Text style={styles.confidenceLabel}>Confidence</Text>
+            <Text style={styles.confidenceValue}>{Math.round(stock.confidence * 100)}%</Text>
           </View>
         </View>
 
-        <Text style={styles.reason}>{stock.reason}</Text>
-
-        {/* LLM Analysis Section */}
-        {stock.analysis && (
-          <View style={styles.analysisSection}>
-            <Text style={styles.analysisTitle}>AI Analysis</Text>
-            <Text style={styles.analysisText}>{stock.analysis}</Text>
-            
-            {stock.risks && stock.risks.length > 0 && (
-              <View style={styles.analysisRow}>
-                <Text style={styles.analysisLabel}>Risks:</Text>
-                <Text style={styles.analysisValue}>{stock.risks.join(', ')}</Text>
-              </View>
-            )}
-            
-            {stock.benefits && stock.benefits.length > 0 && (
-              <View style={styles.analysisRow}>
-                <Text style={styles.analysisLabel}>Benefits:</Text>
-                <Text style={styles.analysisValue}>{stock.benefits.join(', ')}</Text>
-              </View>
-            )}
-            
-            {stock.recommendation && (
-              <View style={styles.analysisRow}>
-                <Text style={styles.analysisLabel}>Recommendation:</Text>
-                <Text style={[styles.analysisValue, { color: getRecommendationColor(stock.recommendation) }]}>
-                  {stock.recommendation.toUpperCase()}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
-
-        <View style={styles.swipeButtons}>
-          <TouchableOpacity
-            style={[styles.swipeButton, styles.rejectButton]}
-            onPress={() => handleSwipe('left')}
-          >
-            <Ionicons name="close" size={24} color="#ef4444" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.swipeButton, styles.likeButton]}
-            onPress={() => handleSwipe('right')}
-          >
-            <Ionicons name="heart" size={24} color="#10b981" />
-          </TouchableOpacity>
+        {/* Swipe Limit Indicator */}
+        <View style={styles.swipeLimitContainer}>
+          <Text style={styles.swipeLimitText}>
+            Swipes Today: {swipeCount}/{DAILY_SWIPE_LIMIT}
+          </Text>
+          {swipeLimitReached && (
+            <Text style={styles.limitReachedText}>
+              Daily limit reached! Come back tomorrow.
+            </Text>
+          )}
         </View>
+
+        {/* Swipe Buttons */}
+        {renderSwipeButtons()}
       </Animated.View>
     );
   };
@@ -767,30 +912,43 @@ const styles = StyleSheet.create({
   swipeButtons: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+    marginTop: 20,
+    paddingHorizontal: 20,
   },
   swipeButton: {
-    padding: 16,
-    borderRadius: 50,
-    backgroundColor: '#334155',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   rejectButton: {
-    backgroundColor: '#7f1d1d',
+    backgroundColor: '#1e293b',
+    borderWidth: 2,
+    borderColor: '#ef4444',
   },
   likeButton: {
-    backgroundColor: '#065f46',
+    backgroundColor: '#1e293b',
+    borderWidth: 2,
+    borderColor: '#10b981',
   },
   noMoreStocks: {
     alignItems: 'center',
     padding: 40,
   },
-  noMoreStocksText: {
+  noMoreStocksTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#ffffff',
     marginTop: 16,
     marginBottom: 8,
   },
-  noMoreStocksSubtext: {
+  noMoreStocksSubtitle: {
     fontSize: 14,
     color: '#94a3b8',
     textAlign: 'center',
@@ -894,5 +1052,97 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  stockCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 24,
+    width: width - 40,
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  stockInfo: {
+    flex: 1,
+  },
+  priceInfo: {
+    alignItems: 'flex-end',
+  },
+  cardBody: {
+    marginBottom: 20,
+  },
+  sectorInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  sectorLabel: {
+    fontSize: 14,
+    color: '#94a3b8',
+    fontWeight: 'bold',
+  },
+  sectorValue: {
+    fontSize: 14,
+    color: '#ffffff',
+    fontWeight: '500',
+  },
+  reasonContainer: {
+    marginBottom: 15,
+  },
+  reasonLabel: {
+    fontSize: 14,
+    color: '#94a3b8',
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  reasonText: {
+    fontSize: 14,
+    color: '#e2e8f0',
+    lineHeight: 20,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  riskContainer: {
+    alignItems: 'center',
+  },
+  riskLabel: {
+    fontSize: 14,
+    color: '#94a3b8',
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  confidenceContainer: {
+    alignItems: 'center',
+  },
+  confidenceLabel: {
+    fontSize: 14,
+    color: '#94a3b8',
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  confidenceValue: {
+    fontSize: 14,
+    color: '#ffffff',
+    fontWeight: '500',
+  },
+  swipeLimitContainer: {
+    alignItems: 'center',
+    marginTop: 15,
+  },
+  swipeLimitText: {
+    fontSize: 14,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  limitReachedText: {
+    fontSize: 12,
+    color: '#ef4444',
+    marginTop: 4,
   },
 }); 

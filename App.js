@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Platform, Alert } from 'react-native';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import debugService from './services/debugService';
 
 import LoginScreen from './screens/LoginScreen';
 import RiskQuiz from './screens/RiskQuiz';
@@ -14,6 +15,9 @@ import SettingsScreen from './screens/SettingsScreen';
 import SupportScreen from './screens/SupportScreen';
 import TermsScreen from './screens/TermsScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
+import DiagnosticScreen from './screens/DiagnosticScreen';
+import TestScreen from './screens/TestScreen';
+import SimpleTestScreen from './screens/SimpleTestScreen';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // Android-specific simplified version
@@ -22,42 +26,73 @@ const isAndroid = Platform.OS === 'android';
 const Stack = createNativeStackNavigator();
 
 export default function App() {
-  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [hasCompletedQuiz, setHasCompletedQuiz] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
+    debugService.info('App starting up', { platform: Platform.OS });
+    
+    // Add global error handler for Android
+    if (Platform.OS === 'android') {
+      const originalConsoleError = console.error;
+      console.error = (...args) => {
+        debugService.error('Console error caught', { args, platform: 'android' });
+        originalConsoleError.apply(console, args);
+      };
+    }
+    
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log('Auth state changed:', user ? 'User logged in' : 'User logged out');
-      setUser(user);
-      
-      if (user) {
-        // Check if user has completed the quiz
-        try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          const userData = userDoc.data();
-          const quizCompleted = userData?.quizCompleted || false;
-          setHasCompletedQuiz(quizCompleted);
-          console.log('Quiz completion status:', quizCompleted);
-        } catch (error) {
-          console.error('Error checking quiz completion:', error);
+      try {
+        debugService.info('Auth state changed', { 
+          userLoggedIn: !!user,
+          platform: Platform.OS 
+        });
+        setUser(user);
+        
+        if (user) {
+          // Check if user has completed the quiz
+          try {
+            debugService.trackFirebase('get', 'users', user.uid);
+            const userDoc = await getDoc(doc(db, 'users', user.uid));
+            const userData = userDoc.data();
+            const quizCompleted = userData?.quizCompleted || false;
+            setHasCompletedQuiz(quizCompleted);
+            debugService.info('Quiz completion status', { quizCompleted });
+          } catch (error) {
+            debugService.error('Error checking quiz completion', error);
+            setHasCompletedQuiz(false);
+          }
+        } else {
           setHasCompletedQuiz(false);
         }
-      } else {
-        setHasCompletedQuiz(false);
+        
+        setLoading(false);
+      } catch (error) {
+        debugService.error('Critical error in auth state change', error);
+        setError(error);
+        setLoading(false);
       }
-      
-      setLoading(false);
     });
 
     return unsubscribe;
   }, []);
+
+  if (error) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorTitle}>Critical Error</Text>
+        <Text style={styles.errorText}>{error.message}</Text>
+        <Text style={styles.errorText}>Platform: {Platform.OS}</Text>
+      </View>
+    );
+  }
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#6366f1" />
         <Text style={styles.loadingText}>Loading FlexFinance...</Text>
+        <Text style={styles.platformText}>Platform: {Platform.OS}</Text>
       </View>
     );
   }
@@ -67,31 +102,21 @@ export default function App() {
       <NavigationContainer>
         <StatusBar style="light" />
         <Stack.Navigator
-          initialRouteName={!user ? 'Login' : (hasCompletedQuiz ? 'Dashboard' : 'RiskQuiz')}
+          initialRouteName={Platform.OS === 'android' ? 'TestScreen' : 'Login'}
           screenOptions={{
             headerShown: false,
-            animation: isAndroid ? 'none' : 'slide_from_right',
+            gestureEnabled: false,
           }}
         >
-          <Stack.Screen name="Login">
-            {(props) => (
-              <LoginScreen {...props} setHasCompletedQuiz={setHasCompletedQuiz} />
-            )}
-          </Stack.Screen>
-          <Stack.Screen name="RiskQuiz">
-            {(props) => (
-              <RiskQuiz {...props} setHasCompletedQuiz={setHasCompletedQuiz} />
-            )}
-          </Stack.Screen>
+          <Stack.Screen name="TestScreen" component={SimpleTestScreen} />
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="RiskQuiz" component={RiskQuiz} />
           <Stack.Screen name="Dashboard" component={Dashboard} />
-          {!isAndroid && (
-            <>
-              <Stack.Screen name="SettingsScreen" component={SettingsScreen} />
-              <Stack.Screen name="SupportScreen" component={SupportScreen} />
-              <Stack.Screen name="TermsScreen" component={TermsScreen} />
-              <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />
-            </>
-          )}
+          <Stack.Screen name="SettingsScreen" component={SettingsScreen} />
+          <Stack.Screen name="SupportScreen" component={SupportScreen} />
+          <Stack.Screen name="TermsScreen" component={TermsScreen} />
+          <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />
+          <Stack.Screen name="DiagnosticScreen" component={DiagnosticScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </ErrorBoundary>
@@ -106,9 +131,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
   },
   loadingText: {
-    color: '#e2e8f0',
+    color: '#ffffff',
     fontSize: 18,
     marginTop: 16,
-    fontWeight: '600',
+  },
+  platformText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    marginTop: 8,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    padding: 20,
+  },
+  errorTitle: {
+    color: '#ef4444',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#ffffff',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 8,
   },
 });

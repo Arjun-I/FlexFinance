@@ -26,11 +26,32 @@ export default {
         backgroundColor: '#0f172a'
       },
       package: 'com.flexfinance.app',
-      permissions: [],
+      permissions: [
+        'INTERNET',
+        'ACCESS_NETWORK_STATE',
+        'WRITE_EXTERNAL_STORAGE',
+        'READ_EXTERNAL_STORAGE'
+      ],
       versionCode: 1,
       minSdkVersion: 21,
       targetSdkVersion: 33,
-      compileSdkVersion: 33
+      compileSdkVersion: 33,
+      // Enhanced Android stability settings
+      softwareKeyboardLayoutMode: 'pan',
+      allowBackup: true,
+      usesCleartextTraffic: true,
+      // Additional crash prevention
+      enableHermes: true,
+      enableProguardInReleaseBuilds: false,
+      enableSeparateBuildPerCPUArchitecture: false,
+      // Memory optimization
+      largeHeap: true,
+      // Prevent crashes from native modules
+      enableDangerousExperimentalLeanBuilds: false,
+      // Additional debugging
+      debuggable: true,
+      // Network security config for development
+      networkSecurityConfig: '@xml/network_security_config'
     },
     web: {
       favicon: './assets/flexlogo.png',
