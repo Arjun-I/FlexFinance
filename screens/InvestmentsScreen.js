@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { db, auth } from '../firebase';
 import PaperTrading from './PaperTrading';
 
 export default function InvestmentsScreen() {
@@ -130,8 +130,16 @@ export default function InvestmentsScreen() {
 
       <View style={styles.content}>
         {activeTab === 'portfolio' && renderPortfolio()}
-        {activeTab === 'liked' && renderLikedStocks()}
-        {activeTab === 'rejected' && renderRejectedStocks()}
+        {activeTab === 'liked' && (
+          <View style={styles.listContainer}>
+            {renderLikedStocks()}
+          </View>
+        )}
+        {activeTab === 'rejected' && (
+          <View style={styles.listContainer}>
+            {renderRejectedStocks()}
+          </View>
+        )}
       </View>
     </View>
   );
@@ -187,6 +195,10 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  listContainer: {
+    flex: 1,
+    paddingTop: 10,
   },
   stockCard: {
     flexDirection: 'row',

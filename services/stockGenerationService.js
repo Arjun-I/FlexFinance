@@ -1,6 +1,6 @@
 // stockGenerationService.js - Personalized Stock Generation System
 import { doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { db, auth } from '../firebase';
 import llmService from './llmService';
 import Constants from 'expo-constants';
 
@@ -104,7 +104,7 @@ class StockGenerationService {
         industry: overview.Industry || 'Software',
         description: overview.Description || '',
         website: overview.Website || '',
-        logo: overview.Website ? `https://logo.clearbit.com/${overview.Website.replace(/^https?:\/\//, '')}` : undefined,
+        logo: overview.Website ? `https://logo.clearbit.com/${overview.Website.replace(/^https?:\/\//, '')}` : null,
         growth: overview.FiveYearAverageReturn ? `5-year Avg Return: ${overview.FiveYearAverageReturn}%` : '',
         riskMetrics: {
           beta: overview.Beta || 'N/A',
@@ -298,8 +298,8 @@ class StockGenerationService {
       // Clear old generated stocks
       const oldStocksRef = collection(db, 'users', uid, 'generatedStocks');
       const oldStocksSnap = await getDocs(oldStocksRef);
-      oldStocksSnap.docs.forEach(doc => {
-        batch.push(doc.ref.delete());
+      oldStocksSnap.docs.forEach(docSnapshot => {
+        batch.push(deleteDoc(docSnapshot.ref));
       });
 
       // Add new generated stocks

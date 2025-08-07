@@ -9,10 +9,11 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { auth } from './firebase';
+import { auth } from '../firebase';
 import { doc, setDoc } from 'firebase/firestore';
-import { db } from './firebase';
-import stockGenerationService from './stockGenerationService';
+import { db } from '../firebase';
+import stockGenerationService from '../services/stockGenerationService';
+import riskProfileService from '../services/riskProfileService';
 
 const questions = [
   {
@@ -111,25 +112,22 @@ export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
     const user = auth.currentUser;
     if (user) {
       try {
-        const profileRef = doc(db, 'users', user.uid);
-        await setDoc(profileRef, {
-          riskProfile: categoryScores,
-          quizCompletedAt: new Date(),
-          quizCompleted: true,
-        }, { merge: true });
+        // Save detailed risk profile
+        console.log('🔄 Saving detailed risk profile...');
+        await riskProfileService.saveRiskProfile(categoryScores);
 
-        // Store completion in Firestore instead of AsyncStorage
+        // Store completion in Firestore
         await setDoc(doc(db, 'users', user.uid, 'preferences', 'quiz'), {
           completed: true,
           completedAt: new Date(),
           riskProfile: categoryScores,
         });
 
-        // Generate personalized stock recommendations
+        // Generate initial stock recommendations (3 picks)
         try {
-          console.log('🔄 Generating personalized stock recommendations...');
-          await stockGenerationService.generateDailyStocks();
-          console.log('✅ Stock recommendations generated successfully');
+          console.log('🔄 Generating initial stock recommendations...');
+          await stockGenerationService.generatePersonalizedStocks(3);
+          console.log('✅ Initial stock recommendations generated successfully');
         } catch (error) {
           console.error('⚠️ Error generating stock recommendations:', error);
           // Don't block the quiz completion if stock generation fails
@@ -177,18 +175,31 @@ export default function RiskQuiz({ navigation, setHasCompletedQuiz }) {
 }
 
 const QuestionCard = ({ question, onAnswer }) => (
-  <View>
+  <View style={styles.questionCard}>
+    <View style={styles.questionHeader}>
+      <Text style={styles.questionCategory}>{question.category || 'Risk Assessment'}</Text>
+      <Text style={styles.questionDescription}>{question.description || 'Choose the option that best describes your preference'}</Text>
+    </View>
+    
     <Text style={styles.questionText}>{question.question}</Text>
-    {question.options.map((option, index) => (
-      <TouchableOpacity
-        key={index}
-        style={styles.optionButton}
-        onPress={() => onAnswer(option.scores)}
-      >
-        <Text style={styles.optionText}>{option.text}</Text>
-        <Ionicons name="chevron-forward" size={20} color="#6366f1" />
-      </TouchableOpacity>
-    ))}
+    
+    <View style={styles.optionsContainer}>
+      {question.options.map((option, index) => (
+        <TouchableOpacity
+          key={index}
+          style={styles.optionButton}
+          onPress={() => onAnswer(option.scores)}
+        >
+          <View style={styles.optionContent}>
+            <Text style={styles.optionText}>{option.text}</Text>
+            {option.description && (
+              <Text style={styles.optionDescription}>{option.description}</Text>
+            )}
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#6366f1" />
+        </TouchableOpacity>
+      ))}
+    </View>
   </View>
 );
 
@@ -206,19 +217,25 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', marginBottom: 20 },
   title: { fontSize: 24, color: '#f8fafc', fontWeight: 'bold', marginTop: 10 },
   subtitle: { fontSize: 16, color: '#cbd5e1', marginBottom: 20 },
-  questionText: { fontSize: 20, color: '#f1f5f9', marginBottom: 20 },
+  questionCard: { backgroundColor: '#1e293b', padding: 20, borderRadius: 12, marginBottom: 20 },
+  questionHeader: { marginBottom: 20 },
+  questionCategory: { fontSize: 14, color: '#6366f1', fontWeight: '600', marginBottom: 8 },
+  questionDescription: { fontSize: 14, color: '#94a3b8', lineHeight: 20 },
+  questionText: { fontSize: 20, color: '#f1f5f9', marginBottom: 20, fontWeight: '600' },
+  optionsContainer: { gap: 12 },
   optionButton: {
-    backgroundColor: '#1e293b',
+    backgroundColor: '#334155',
     padding: 16,
     borderRadius: 10,
-    marginBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#475569',
   },
-  optionText: { color: '#e2e8f0', fontSize: 16, fontWeight: '500' },
+  optionContent: { flex: 1 },
+  optionText: { color: '#e2e8f0', fontSize: 16, fontWeight: '500', marginBottom: 4 },
+  optionDescription: { color: '#94a3b8', fontSize: 12, lineHeight: 16 },
   progressContainer: { width: '100%', marginBottom: 20 },
   progressBar: {
     height: 8,

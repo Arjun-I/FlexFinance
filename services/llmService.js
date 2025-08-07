@@ -1,6 +1,6 @@
 // llmService.js - LLM Integration for Stock Recommendations
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { db, auth } from '../firebase';
 
 import Constants from 'expo-constants';
 

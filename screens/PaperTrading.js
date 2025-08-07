@@ -22,7 +22,7 @@ import {
   addDoc,
   setDoc,
 } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { db, auth } from '../firebase';
 
 const screenWidth = Dimensions.get('window').width;
 

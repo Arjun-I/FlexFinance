@@ -5,8 +5,8 @@ import {
   Animated, PanResponder, Alert, ActivityIndicator, TouchableOpacity, Platform, ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { doc, updateDoc, arrayUnion, setDoc, getDoc, getDocs, collection, deleteDoc } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { doc, updateDoc, arrayUnion, setDoc, getDoc, getDocs, collection, deleteDoc, addDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 
 const { width } = Dimensions.get('window');
 
@@ -114,148 +114,6 @@ const MOCK_STOCKS = [
   }
 ];
 
-  const addLikedStock = async (stock) => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    try {
-      // Add to liked stocks
-      await updateDoc(doc(db, 'users', user.uid), {
-        likedStocks: arrayUnion(stock.symbol)
-      });
-
-      // Check if stock already exists in portfolio
-      const portfolioRef = doc(db, 'users', user.uid, 'portfolio', stock.symbol);
-      const portfolioDoc = await getDoc(portfolioRef);
-      
-      if (!portfolioDoc.exists()) {
-        // Add to portfolio with 0 shares initially
-        await setDoc(portfolioRef, {
-          symbol: stock.symbol,
-          shares: 0,
-          averagePrice: 0,
-          totalCost: 0,
-          industry: stock.sector,
-          datePurchased: new Date(),
-          lastUpdated: new Date()
-        });
-      }
-
-      // Reload stocks to update the UI
-      await loadStocks();
-      Alert.alert('Success', `${stock.symbol} added to liked stocks`);
-    } catch (error) {
-      console.error('Error adding liked stock:', error);
-      Alert.alert('Error', 'Failed to add stock to liked list');
-    }
-  };
-
-  const rejectStock = async (stock) => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    try {
-      // Add to rejected stocks
-      await addDoc(collection(db, 'users', user.uid, 'rejected'), {
-        symbol: stock.symbol,
-        name: stock.name,
-        sector: stock.sector,
-        reason: stock.reason,
-        rejectedAt: new Date()
-      });
-
-      // Reload stocks to update the UI
-      await loadStocks();
-      Alert.alert('Rejected', `${stock.symbol} added to rejected stocks`);
-    } catch (error) {
-      console.error('Error rejecting stock:', error);
-      Alert.alert('Error', 'Failed to reject stock');
-    }
-  };
-
-  const moveStockToLiked = async (stock) => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    try {
-      // Remove from rejected
-      const rejectedSnap = await getDocs(collection(db, 'users', user.uid, 'rejected'));
-      const rejectedDoc = rejectedSnap.docs.find(doc => doc.data().symbol === stock.symbol);
-      if (rejectedDoc) {
-        await deleteDoc(rejectedDoc.ref);
-      }
-
-      // Add to liked stocks
-      await updateDoc(doc(db, 'users', user.uid), {
-        likedStocks: arrayUnion(stock.symbol)
-      });
-
-      // Check if stock already exists in portfolio
-      const portfolioRef = doc(db, 'users', user.uid, 'portfolio', stock.symbol);
-      const portfolioDoc = await getDoc(portfolioRef);
-      
-      if (!portfolioDoc.exists()) {
-        // Add to portfolio with 0 shares
-        await setDoc(portfolioRef, {
-          symbol: stock.symbol,
-          shares: 0,
-          averagePrice: 0,
-          totalCost: 0,
-          industry: stock.sector,
-          datePurchased: new Date(),
-          lastUpdated: new Date()
-        });
-      }
-
-      // Reload stocks to update the UI
-      await loadStocks();
-      Alert.alert('Success', `${stock.symbol} moved to liked stocks`);
-    } catch (error) {
-      console.error('Error moving stock to liked:', error);
-      Alert.alert('Error', 'Failed to move stock');
-    }
-  };
-
-  const moveStockToRejected = async (stock) => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    try {
-      // Remove from liked stocks
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const likedStocks = userDoc.data()?.likedStocks || [];
-      const updatedLikedStocks = likedStocks.filter(symbol => symbol !== stock.symbol);
-      
-      await updateDoc(doc(db, 'users', user.uid), {
-        likedStocks: updatedLikedStocks
-      });
-
-      // Only remove from portfolio if it has 0 shares (not invested)
-      const portfolioRef = doc(db, 'users', user.uid, 'portfolio', stock.symbol);
-      const portfolioDoc = await getDoc(portfolioRef);
-      
-      if (portfolioDoc.exists() && portfolioDoc.data().shares === 0) {
-        await deleteDoc(portfolioRef);
-      }
-
-      // Add to rejected
-      await addDoc(collection(db, 'users', user.uid, 'rejected'), {
-        symbol: stock.symbol,
-        name: stock.name,
-        sector: stock.sector,
-        reason: stock.reason,
-        rejectedAt: new Date()
-      });
-
-      // Reload stocks to update the UI
-      await loadStocks();
-      Alert.alert('Rejected', `${stock.symbol} moved to rejected stocks`);
-    } catch (error) {
-      console.error('Error moving stock to rejected:', error);
-      Alert.alert('Error', 'Failed to move stock');
-    }
-  };
-
 export default function SwipeStocksMock() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [stocks, setStocks] = useState([]);
@@ -302,6 +160,166 @@ export default function SwipeStocksMock() {
     }
   };
 
+  const addLikedStock = async (stock) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      // Add to liked stocks
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (!userDoc.exists()) {
+        // Create user document with initial liked stock
+        await setDoc(userDocRef, { likedStocks: [stock.symbol] });
+      } else {
+        // Append to existing liked stocks
+        await updateDoc(userDocRef, {
+          likedStocks: arrayUnion(stock.symbol),
+        });
+      }
+
+      // Check if stock already exists in portfolio
+      const portfolioRef = doc(db, 'users', user.uid, 'portfolio', stock.symbol);
+      const portfolioDoc = await getDoc(portfolioRef);
+      
+      if (!portfolioDoc.exists()) {
+        // Add to portfolio with 0 shares initially
+        await setDoc(portfolioRef, {
+          symbol: stock.symbol,
+          shares: 0,
+          averagePrice: 0,
+          totalCost: 0,
+          industry: stock.sector,
+          datePurchased: new Date(),
+          lastUpdated: new Date(),
+        });
+      }
+
+      // Reload stocks to update the UI
+      await loadStocks();
+      Alert.alert('Success', `${stock.symbol} added to liked stocks`);
+    } catch (error) {
+      console.error('Error adding liked stock:', error);
+      Alert.alert('Error', 'Failed to add stock to liked list');
+    }
+  };
+
+  const rejectStock = async (stock) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      // Add to rejected stocks
+      await addDoc(collection(db, 'users', user.uid, 'rejected'), {
+        symbol: stock.symbol,
+        name: stock.name,
+        sector: stock.sector,
+        reason: stock.reason,
+        rejectedAt: new Date(),
+      });
+
+      // Reload stocks to update the UI
+      await loadStocks();
+      Alert.alert('Rejected', `${stock.symbol} added to rejected stocks`);
+    } catch (error) {
+      console.error('Error rejecting stock:', error);
+      Alert.alert('Error', 'Failed to reject stock');
+    }
+  };
+
+  const moveStockToLiked = async (stock) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      // Remove from rejected
+      const rejectedSnap = await getDocs(collection(db, 'users', user.uid, 'rejected'));
+      const rejectedDoc = rejectedSnap.docs.find(doc => doc.data().symbol === stock.symbol);
+      if (rejectedDoc) {
+        await deleteDoc(rejectedDoc.ref);
+      }
+
+      // Add to liked stocks
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (!userDoc.exists()) {
+        // Create user document with initial liked stock
+        await setDoc(userDocRef, { likedStocks: [stock.symbol] });
+      } else {
+        // Append to existing liked stocks
+        await updateDoc(userDocRef, {
+          likedStocks: arrayUnion(stock.symbol),
+        });
+      }
+
+      // Check if stock already exists in portfolio
+      const portfolioRef = doc(db, 'users', user.uid, 'portfolio', stock.symbol);
+      const portfolioDoc = await getDoc(portfolioRef);
+      
+      if (!portfolioDoc.exists()) {
+        // Add to portfolio with 0 shares
+        await setDoc(portfolioRef, {
+          symbol: stock.symbol,
+          shares: 0,
+          averagePrice: 0,
+          totalCost: 0,
+          industry: stock.sector,
+          datePurchased: new Date(),
+          lastUpdated: new Date(),
+        });
+      }
+
+      // Reload stocks to update the UI
+      await loadStocks();
+      Alert.alert('Success', `${stock.symbol} moved to liked stocks`);
+    } catch (error) {
+      console.error('Error moving stock to liked:', error);
+      Alert.alert('Error', 'Failed to move stock');
+    }
+  };
+
+  const moveStockToRejected = async (stock) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      // Remove from liked stocks
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const likedStocks = userDoc.data()?.likedStocks || [];
+      const updatedLikedStocks = likedStocks.filter(symbol => symbol !== stock.symbol);
+      
+      await updateDoc(doc(db, 'users', user.uid), {
+        likedStocks: updatedLikedStocks
+      });
+
+      // Only remove from portfolio if it has 0 shares (not invested)
+      const portfolioRef = doc(db, 'users', user.uid, 'portfolio', stock.symbol);
+      const portfolioDoc = await getDoc(portfolioRef);
+      
+      if (portfolioDoc.exists() && portfolioDoc.data().shares === 0) {
+        await deleteDoc(portfolioRef);
+      }
+
+      // Add to rejected
+      await addDoc(collection(db, 'users', user.uid, 'rejected'), {
+        symbol: stock.symbol,
+        name: stock.name,
+        sector: stock.sector,
+        reason: stock.reason,
+        rejectedAt: new Date(),
+      });
+
+      // Reload stocks to update the UI
+      await loadStocks();
+      Alert.alert('Rejected', `${stock.symbol} moved to rejected stocks`);
+    } catch (error) {
+      console.error('Error moving stock to rejected:', error);
+      Alert.alert('Error', 'Failed to move stock');
+    }
+  };
+  
   useEffect(() => {
     loadStocks();
   }, []);
@@ -604,8 +622,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     padding: 20,
   },
   card: {
