@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,24 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+// Conditional import for victory charts (web compatibility)
+let VictoryPie, VictoryLabel;
+if (Platform.OS === 'web') {
+  // For web, we'll create a simple fallback
+  VictoryPie = null;
+  VictoryLabel = null;
+} else {
+  try {
+    const victory = require('victory-native');
+    VictoryPie = victory.VictoryPie;
+    VictoryLabel = victory.VictoryLabel;
+  } catch (e) {
+    console.warn('Victory native not available:', e);
+    VictoryPie = null;
+    VictoryLabel = null;
+  }
+}
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import {
@@ -28,7 +46,7 @@ import {
 import StockComparison from '../components/StockComparison';
 import PortfolioTracker from '../components/PortfolioTracker';
 
-export default function Dashboard({ navigation }) {
+export default function Dashboard({ navigation, route }) {
   const [selectedTab, setSelectedTab] = useState('overview');
   const user = auth.currentUser;
   const [profile, setProfile] = useState(null);
@@ -129,15 +147,18 @@ export default function Dashboard({ navigation }) {
       
       // Calculate portfolio value based on current market prices, not average cost
       // This will be updated by PortfolioTracker with real-time prices
-      const cash = data.cashBalance || 0;
+      const cash = parseFloat(data.cashBalance) || 0;
       
       // Initial value using average prices, will be updated by PortfolioTracker
       const initialHoldingsValue = holdings.reduce((sum, holding) => {
-        const { shares = 0, averagePrice = 0 } = holding;
-        return sum + shares * averagePrice;
+        const shares = parseFloat(holding.shares) || 0;
+        const averagePrice = parseFloat(holding.averagePrice) || 0;
+        const value = shares * averagePrice;
+        return sum + (isNaN(value) ? 0 : value);
       }, 0);
       
-      setPortfolioValue(initialHoldingsValue + cash);
+      const totalPortfolioValue = initialHoldingsValue + cash;
+      setPortfolioValue(isNaN(totalPortfolioValue) ? 0 : totalPortfolioValue);
       setProfile(data);
       setPortfolioHoldings(holdings);
     } catch (err) {
@@ -151,6 +172,13 @@ export default function Dashboard({ navigation }) {
     }
   };
 
+  // Handle navigation parameter for tab switching
+  useEffect(() => {
+    if (route?.params?.tab) {
+      setSelectedTab(route.params.tab);
+    }
+  }, [route?.params?.tab]);
+
   useEffect(() => {
     if (selectedTab === 'overview' || selectedTab === 'investments') {
       setLoadingOverview(true);
@@ -161,6 +189,16 @@ export default function Dashboard({ navigation }) {
       setTimeout(() => setSwipeLoading(false), 1000);
     }
   }, [selectedTab, user]);
+
+  // Auto-refresh portfolio when switching to investments tab
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedTab === 'investments') {
+        // Refreshing portfolio on focus
+        fetchOverviewData();
+      }
+    }, [selectedTab])
+  );
 
   const renderOverview = () => (
     <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
@@ -190,7 +228,7 @@ export default function Dashboard({ navigation }) {
             <View style={styles.metricContent}>
               <Text style={styles.metricLabel}>Cash Balance</Text>
               <Text style={styles.metricValue}>
-                ${profile?.cashBalance?.toFixed(2) || '0.00'}
+                ${(parseFloat(profile?.cashBalance) || 0).toFixed(2)}
               </Text>
             </View>
           </View>
@@ -205,30 +243,100 @@ export default function Dashboard({ navigation }) {
             <View style={styles.metricContent}>
               <Text style={styles.metricLabel}>Total Portfolio Value</Text>
               <Text style={styles.metricValue}>
-                ${portfolioValue.toFixed(2)}
+                ${(isNaN(portfolioValue) ? 0 : portfolioValue).toFixed(2)}
               </Text>
             </View>
           </View>
 
           <View style={styles.metricRow}>
             <Ionicons
-              name="calendar"
+              name="briefcase"
               size={24}
-              color="#facc15"
+              color="#8b5cf6"
               style={styles.metricIcon}
             />
             <View style={styles.metricContent}>
-              <Text style={styles.metricLabel}>Last Login</Text>
+              <Text style={styles.metricLabel}>Holdings</Text>
               <Text style={styles.metricValue}>
-                {user?.metadata?.lastSignInTime
-                  ? new Date(
-                      user.metadata.lastSignInTime
-                    ).toLocaleDateString()
-                  : 'N/A'}
+                {portfolioHoldings.filter(h => h.shares > 0).length} stocks
               </Text>
             </View>
           </View>
         </View>
+
+        {/* Portfolio Industry Breakdown - Pie Chart */}
+        {portfolioHoldings.length > 0 && (
+          <View style={styles.overviewCard}>
+            <Text style={styles.cardTitle}>Portfolio Breakdown</Text>
+            {buildIndustryBreakdown().length > 0 ? (
+              <View style={styles.pieChartContainer}>
+                {VictoryPie && Platform.OS !== 'web' ? (
+                  <>
+                    <VictoryPie
+                      data={buildIndustryBreakdown().map((item, index) => ({
+                        x: item.industry,
+                        y: item.value,
+                        label: `${item.percent}%`
+                      }))}
+                      width={300}
+                      height={200}
+                      innerRadius={0}
+                      colorScale={buildIndustryBreakdown().map((_, index) => getIndustryColor(index))}
+                      labelComponent={<VictoryLabel style={{ fontSize: 12, fill: "#ffffff" }} />}
+                      animate={{ duration: 1000 }}
+                    />
+                  </>
+                ) : (
+                  // Web fallback - simple bar chart visualization
+                  <View style={styles.webFallbackChart}>
+                    <Text style={styles.webFallbackTitle}>Portfolio Distribution</Text>
+                    {buildIndustryBreakdown().map((item, index) => (
+                      <View key={item.industry} style={styles.webBarItem}>
+                        <View style={styles.webBarLabel}>
+                          <View style={[styles.webBarColor, { backgroundColor: getIndustryColor(index) }]} />
+                          <Text style={styles.webBarText}>{item.industry}</Text>
+                        </View>
+                        <View style={styles.webBarContainer}>
+                          <View 
+                            style={[
+                              styles.webBar, 
+                              { 
+                                backgroundColor: getIndustryColor(index),
+                                width: `${item.percent}%`
+                              }
+                            ]} 
+                          />
+                          <Text style={styles.webBarPercent}>{item.percent}%</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                {/* Legend */}
+                <View style={styles.pieLegend}>
+                  {buildIndustryBreakdown().map((item, index) => (
+                    <View key={item.industry} style={styles.legendItem}>
+                      <View style={[styles.legendColor, { backgroundColor: getIndustryColor(index) }]} />
+                      <Text style={styles.legendText}>{item.industry}</Text>
+                      <Text style={styles.legendPercent}>{item.percent}%</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : (
+              <View style={styles.emptyBreakdown}>
+                <Text style={styles.emptyBreakdownText}>
+                  No active positions to display. Add shares to see breakdown.
+                </Text>
+              </View>
+            )}
+            {portfolioHoldings.filter(h => h.shares === 0).length > 0 && (
+              <Text style={styles.watchlistNote}>
+                + {portfolioHoldings.filter(h => h.shares === 0).length} stocks in watchlist
+              </Text>
+            )}
+          </View>
+        )}
 
         {/* Risk Profile Details */}
         {profile?.riskProfile && (
@@ -321,13 +429,92 @@ export default function Dashboard({ navigation }) {
           <Text style={styles.loadingText}>Loading stock recommendations...</Text>
         </View>
       ) : (
-        <StockComparison navigation={navigation} />
+        <StockComparison 
+          onNavigateToInvestments={() => setSelectedTab('investments')}
+        />
       )}
     </View>
   );
 
   const handlePortfolioValueChange = (newValue) => {
     setPortfolioValue(newValue);
+  };
+
+  // Build industry breakdown for portfolio visualization
+  const buildIndustryBreakdown = () => {
+    if (!portfolioHoldings.length) return [];
+    
+    const totalValue = portfolioHoldings.reduce((sum, holding) => {
+      const shares = parseFloat(holding.shares) || 0;
+      const price = parseFloat(holding.currentPrice || holding.averagePrice) || 0;
+      const value = shares * price;
+      return sum + (isNaN(value) ? 0 : value);
+    }, 0);
+    
+    if (totalValue === 0) return [];
+    
+    const industryMap = {};
+    portfolioHoldings.forEach(holding => {
+      const shares = parseFloat(holding.shares) || 0;
+      if (shares > 0) {
+        const industry = holding.industry || holding.sector || 'Other';
+        const price = parseFloat(holding.currentPrice || holding.averagePrice) || 0;
+        const value = shares * price;
+        if (!isNaN(value) && value > 0) {
+          industryMap[industry] = (industryMap[industry] || 0) + value;
+        }
+      }
+    });
+    
+    return Object.entries(industryMap)
+      .map(([industry, value]) => ({
+        industry,
+        value,
+        percent: ((value / totalValue) * 100).toFixed(1)
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5); // Top 5 industries
+  };
+
+  // Get color for industry breakdown
+  const getIndustryColor = (index) => {
+    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+    return colors[index % colors.length];
+  };
+
+  // Calculate portfolio performance statistics
+  const calculatePerformanceStats = () => {
+    const totalInvested = portfolioHoldings.reduce((sum, holding) => {
+      const shares = parseFloat(holding.shares) || 0;
+      const avgPrice = parseFloat(holding.averagePrice) || 0;
+      const value = shares * avgPrice;
+      return sum + (isNaN(value) ? 0 : value);
+    }, 0);
+    
+    const currentValue = portfolioHoldings.reduce((sum, holding) => {
+      const shares = parseFloat(holding.shares) || 0;
+      const currentPrice = parseFloat(holding.currentPrice || holding.averagePrice) || 0;
+      const value = shares * currentPrice;
+      return sum + (isNaN(value) ? 0 : value);
+    }, 0);
+    
+    const totalReturn = currentValue - totalInvested;
+    const returnPercent = totalInvested > 0 ? (totalReturn / totalInvested) * 100 : 0;
+    
+    return {
+      totalInvested: isNaN(totalInvested) ? 0 : totalInvested,
+      currentValue: isNaN(currentValue) ? 0 : currentValue,
+      totalReturn: isNaN(totalReturn) ? 0 : totalReturn,
+      returnPercent: isNaN(returnPercent) ? 0 : returnPercent
+    };
+  };
+
+  // Get risk profile type description
+  const getRiskProfileType = (riskProfile) => {
+    const volatility = riskProfile.volatility || 0;
+    if (volatility <= 8) return 'Conservative';
+    if (volatility <= 12) return 'Moderate';
+    return 'Aggressive';
   };
 
   const renderInvestments = () => (
@@ -339,53 +526,148 @@ export default function Dashboard({ navigation }) {
     />
   );
 
-  const renderProfile = () => (
-    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
-      <View style={styles.profileCard}>
-        <View style={styles.profileAvatar}>
-          <Ionicons name="person" size={40} color="#6366f1" />
+  const renderProfile = () => {
+    const performanceStats = calculatePerformanceStats();
+    
+    return (
+      <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.profileCard}>
+          <View style={styles.profileAvatar}>
+            <Ionicons name="person" size={40} color="#6366f1" />
+          </View>
+          <Text style={styles.profileName}>{user?.displayName || 'User'}</Text>
+          <Text style={styles.profileEmail}>{user?.email}</Text>
+          <Text style={styles.profileJoined}>
+            Member since {user?.metadata?.creationTime 
+              ? new Date(user.metadata.creationTime).toLocaleDateString()
+              : 'Recently'}
+          </Text>
         </View>
-        <Text style={styles.profileName}>{user?.displayName || 'User'}</Text>
-        <Text style={styles.profileEmail}>{user?.email}</Text>
-      </View>
 
-      <TouchableOpacity
-        style={styles.menuItem}
-        onPress={() => navigation.navigate('SettingsScreen')}
-      >
-        <Ionicons name="settings" size={24} color="#94a3b8" />
-        <Text style={styles.menuText}>Settings</Text>
-        <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
-      </TouchableOpacity>
+        {/* Portfolio Performance */}
+        <View style={styles.overviewCard}>
+          <Text style={styles.cardTitle}>Portfolio Performance</Text>
+          <View style={styles.performanceGrid}>
+            <View style={styles.performanceItem}>
+              <Text style={styles.performanceLabel}>Total Invested</Text>
+              <Text style={styles.performanceValue}>
+                ${performanceStats.totalInvested.toFixed(2)}
+              </Text>
+            </View>
+            <View style={styles.performanceItem}>
+              <Text style={styles.performanceLabel}>Current Value</Text>
+              <Text style={styles.performanceValue}>
+                ${performanceStats.currentValue.toFixed(2)}
+              </Text>
+            </View>
+            <View style={styles.performanceItem}>
+              <Text style={styles.performanceLabel}>Total Return</Text>
+              <Text style={[
+                styles.performanceValue,
+                { color: performanceStats.totalReturn >= 0 ? '#10b981' : '#ef4444' }
+              ]}>
+                {performanceStats.totalReturn >= 0 ? '+' : ''}${performanceStats.totalReturn.toFixed(2)}
+              </Text>
+            </View>
+            <View style={styles.performanceItem}>
+              <Text style={styles.performanceLabel}>Return %</Text>
+              <Text style={[
+                styles.performanceValue,
+                { color: performanceStats.returnPercent >= 0 ? '#10b981' : '#ef4444' }
+              ]}>
+                {performanceStats.returnPercent >= 0 ? '+' : ''}{performanceStats.returnPercent.toFixed(1)}%
+              </Text>
+            </View>
+          </View>
+        </View>
 
-      <TouchableOpacity
-        style={styles.menuItem}
-        onPress={() => navigation.navigate('SupportScreen')}
-      >
-        <Ionicons name="help-circle" size={24} color="#94a3b8" />
-        <Text style={styles.menuText}>Help & Support</Text>
-        <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
-      </TouchableOpacity>
+        {/* Account Stats */}
+        <View style={styles.overviewCard}>
+          <Text style={styles.cardTitle}>Account Statistics</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statItem}>
+              <Ionicons name="trending-up" size={20} color="#10b981" />
+              <Text style={styles.statLabel}>Stocks Owned</Text>
+              <Text style={styles.statValue}>
+                {portfolioHoldings.filter(h => h.shares > 0).length}
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <Ionicons name="eye" size={20} color="#6366f1" />
+              <Text style={styles.statLabel}>Watchlist</Text>
+              <Text style={styles.statValue}>
+                {portfolioHoldings.filter(h => h.shares === 0).length}
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <Ionicons name="wallet" size={20} color="#f59e0b" />
+              <Text style={styles.statLabel}>Available Cash</Text>
+              <Text style={styles.statValue}>
+                ${(profile?.cashBalance || 0).toFixed(0)}
+              </Text>
+            </View>
+          </View>
+        </View>
 
-      <TouchableOpacity
-        style={styles.menuItem}
-        onPress={() => navigation.navigate('TermsScreen')}
-      >
-        <Ionicons name="document-text" size={24} color="#94a3b8" />
-        <Text style={styles.menuText}>Terms & Privacy</Text>
-        <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
-      </TouchableOpacity>
+        {/* Risk Profile Summary */}
+        {profile?.riskProfile && (
+          <View style={styles.overviewCard}>
+            <Text style={styles.cardTitle}>Risk Profile</Text>
+            <View style={styles.riskSummary}>
+              <Text style={styles.riskProfileType}>
+                {getRiskProfileType(profile.riskProfile)} Investor
+              </Text>
+              <TouchableOpacity 
+                style={styles.retakeQuizButton}
+                onPress={handleResetRiskProfile}
+              >
+                <Text style={styles.retakeQuizText}>Retake Quiz</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
-      <TouchableOpacity
-        style={[styles.menuItem, styles.signOutButton]}
-        onPress={handleSignOut}
-      >
-        <Ionicons name="log-out" size={24} color="#ef4444" />
-        <Text style={[styles.menuText, { color: '#ef4444' }]}>Sign Out</Text>
-        <Ionicons name="chevron-forward" size={20} color="#ef4444" />
-      </TouchableOpacity>
-    </ScrollView>
-  );
+        {/* Menu Items */}
+        <View style={styles.menuSection}>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('SettingsScreen')}
+          >
+            <Ionicons name="settings" size={24} color="#94a3b8" />
+            <Text style={styles.menuText}>Settings</Text>
+            <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('SupportScreen')}
+          >
+            <Ionicons name="help-circle" size={24} color="#94a3b8" />
+            <Text style={styles.menuText}>Help & Support</Text>
+            <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('TermsScreen')}
+          >
+            <Ionicons name="document-text" size={24} color="#94a3b8" />
+            <Text style={styles.menuText}>Terms & Privacy</Text>
+            <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuItem, styles.signOutButton]}
+            onPress={handleSignOut}
+          >
+            <Ionicons name="log-out" size={24} color="#ef4444" />
+            <Text style={[styles.menuText, { color: '#ef4444' }]}>Sign Out</Text>
+            <Ionicons name="chevron-forward" size={20} color="#ef4444" />
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  };
 
   // Debug components removed for cleaner UI
 
@@ -584,6 +866,78 @@ const styles = StyleSheet.create({
   },
   profileName: { color: '#ffffff', fontSize: 20, fontWeight: 'bold', marginBottom: 4 },
   profileEmail: { color: '#94a3b8', fontSize: 14 },
+  profileJoined: {
+    color: '#64748b',
+    fontSize: 12,
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  performanceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 12,
+  },
+  performanceItem: {
+    width: '48%',
+    marginBottom: 16,
+    marginRight: '2%',
+  },
+  performanceLabel: {
+    color: '#94a3b8',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  performanceValue: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 12,
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statLabel: {
+    color: '#94a3b8',
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  statValue: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  riskSummary: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  riskProfileType: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  retakeQuizButton: {
+    backgroundColor: '#6366f1',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+  },
+  retakeQuizText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  menuSection: {
+    marginTop: 12,
+  },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -636,6 +990,38 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontWeight: '500',
   },
+  industryBreakdown: {
+    marginTop: 12,
+  },
+  industryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  industryColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  industryName: {
+    flex: 1,
+    color: '#e2e8f0',
+    fontSize: 14,
+  },
+  industryPercent: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  watchlistNote: {
+    color: '#64748b',
+    fontSize: 12,
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
   cardTitle: {
     fontSize: 18,
     fontWeight: 'bold',
@@ -670,5 +1056,94 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 10,
     textAlign: 'center',
+  },
+  pieChartContainer: {
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  pieLegend: {
+    marginTop: 16,
+    width: '100%',
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 16,
+  },
+  legendColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  legendText: {
+    color: '#e2e8f0',
+    fontSize: 14,
+    flex: 1,
+  },
+  legendPercent: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  emptyBreakdown: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyBreakdownText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  webFallbackChart: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  webFallbackTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  webBarItem: {
+    width: '100%',
+    marginBottom: 12,
+  },
+  webBarLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  webBarColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  webBarText: {
+    color: '#e2e8f0',
+    fontSize: 14,
+    flex: 1,
+  },
+  webBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#334155',
+    borderRadius: 4,
+    overflow: 'hidden',
+    height: 24,
+  },
+  webBar: {
+    height: '100%',
+    minWidth: 20,
+  },
+  webBarPercent: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginLeft: 8,
+    marginRight: 8,
   },
 });

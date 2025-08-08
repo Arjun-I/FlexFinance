@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import debugService from '../services/debugService';
+// Removed debugService import - using console.error instead
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -19,7 +19,7 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    debugService.error('ErrorBoundary caught an error', { error, errorInfo });
+    console.error('❌ ErrorBoundary caught an error:', error, errorInfo);
     this.setState({
       error: error,
       errorInfo: errorInfo

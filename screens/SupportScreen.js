@@ -9,8 +9,11 @@ export default function SupportScreen({ navigation }) {
   };
 
   const handleFAQ = () => {
-    // Navigate to FAQ or open FAQ modal
-    Alert.alert('FAQ', 'FAQ feature coming soon!');
+    Alert.alert(
+      'Frequently Asked Questions',
+      '❓ How do I get stock recommendations?\nComplete the risk assessment quiz to receive personalized AI-powered stock recommendations.\n\n💰 How does paper trading work?\nPaper trading lets you practice investing with virtual money. Your trades are tracked but no real money is involved.\n\n📊 How are my recommendations personalized?\nOur AI analyzes your risk profile, investment goals, and preferences to suggest suitable stocks.\n\n🔄 Can I change my risk profile?\nYes! Go to Settings > Reset Risk Profile to retake the quiz.\n\n📱 Is my data secure?\nYes, all data is encrypted and stored securely in Firebase.',
+      [{ text: 'Got it!' }]
+    );
   };
 
   const handleReportBug = () => {
@@ -69,7 +72,7 @@ export default function SupportScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem}>
+        <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('TermsScreen')}>
           <Ionicons name="document-text" size={24} color="#6366f1" />
           <Text style={styles.menuText}>Terms of Service</Text>
           <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
@@ -79,21 +82,15 @@ export default function SupportScreen({ navigation }) {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>About</Text>
         
-        <TouchableOpacity style={styles.menuItem}>
+        <TouchableOpacity 
+          style={styles.menuItem}
+          onPress={() => Alert.alert(
+            'About FlexFinance',
+            'FlexFinance v1.0.0\n\nAn AI-powered investment app designed for beginners.\n\n🤖 AI-driven stock analysis\n📊 Personalized recommendations\n💰 Paper trading simulator\n📈 Real-time portfolio tracking\n\nBuilt to help you learn investing safely and effectively.'
+          )}
+        >
           <Ionicons name="information-circle" size={24} color="#6366f1" />
           <Text style={styles.menuText}>About FlexFinance</Text>
-          <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="star" size={24} color="#6366f1" />
-          <Text style={styles.menuText}>Rate App</Text>
-          <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="share-social" size={24} color="#6366f1" />
-          <Text style={styles.menuText}>Share App</Text>
           <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
         </TouchableOpacity>
       </View>

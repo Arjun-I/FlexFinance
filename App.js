@@ -6,7 +6,7 @@ import { View, Text, StyleSheet, ActivityIndicator, Platform, Alert } from 'reac
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import debugService from './services/debugService';
+// Removed debugService - using console.log instead
 
 import LoginScreen from './screens/LoginScreen';
 import RiskQuiz from './screens/RiskQuiz';
@@ -31,20 +31,20 @@ export default function App() {
   const [hasCompletedQuiz, setHasCompletedQuiz] = useState(false);
 
   useEffect(() => {
-    debugService.info('App starting up', { platform: Platform.OS });
+    console.log('✅ App starting up, platform:', Platform.OS);
     
     // Add global error handler for Android
     if (Platform.OS === 'android') {
       const originalConsoleError = console.error;
       console.error = (...args) => {
-        debugService.error('Console error caught', { args, platform: 'android' });
+        console.error('❌ Console error caught on Android:', args);
         originalConsoleError.apply(console, args);
       };
     }
     
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       try {
-        debugService.info('Auth state changed', { 
+        console.log('✅ Auth state changed:', { 
           userLoggedIn: !!user,
           platform: Platform.OS 
         });
@@ -53,14 +53,13 @@ export default function App() {
         if (user) {
           // Check if user has completed the quiz
           try {
-            debugService.trackFirebase('get', 'users', user.uid);
             const userDoc = await getDoc(doc(db, 'users', user.uid));
             const userData = userDoc.data();
             const quizCompleted = userData?.quizCompleted || false;
             setHasCompletedQuiz(quizCompleted);
-            debugService.info('Quiz completion status', { quizCompleted });
+            console.log('✅ Quiz completion status:', quizCompleted);
           } catch (error) {
-            debugService.error('Error checking quiz completion', error);
+            console.error('❌ Error checking quiz completion:', error);
             setHasCompletedQuiz(false);
           }
         } else {
@@ -69,7 +68,7 @@ export default function App() {
         
         setLoading(false);
       } catch (error) {
-        debugService.error('Critical error in auth state change', error);
+        console.error('❌ Critical error in auth state change:', error);
         setError(error);
         setLoading(false);
       }

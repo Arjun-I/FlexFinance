@@ -8,12 +8,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "doctor": "expo doctor",
-    "clear-cache": "expo start --clear",
-    "debug": "node --experimental-modules debug/run-all-tests.mjs",
-    "debug:groq": "node --experimental-modules debug/test-groq.mjs",
-    "debug:finnhub": "node --experimental-modules debug/test-finnhub.mjs",
-    "debug:firebase": "node --experimental-modules debug/test-firebase.mjs",
-    "debug:generation": "node --experimental-modules debug/test-generation.mjs"
+    "clear-cache": "expo start --clear"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",
@@ -39,7 +34,6 @@
     "expo-symbols": "~0.4.5",
     "expo-system-ui": "~5.0.10",
     "expo-web-browser": "~14.2.0",
-    "finnhub": "^2.0.7",
     "firebase": "^12.0.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",

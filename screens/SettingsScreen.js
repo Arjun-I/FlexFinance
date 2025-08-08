@@ -89,22 +89,7 @@ export default function SettingsScreen({ navigation }) {
     );
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'This action cannot be undone. All your data will be permanently deleted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert('Not Available', 'Account deletion feature is not yet implemented.');
-          },
-        },
-      ]
-    );
-  };
+
 
   const renderSettingItem = ({ icon, title, subtitle, value, onPress, type = 'toggle' }) => (
     <TouchableOpacity style={styles.settingItem} onPress={onPress}>
@@ -180,26 +165,6 @@ export default function SettingsScreen({ navigation }) {
             }
           })}
           {renderSettingItem({
-            icon: 'moon',
-            title: 'Dark Mode',
-            subtitle: 'Use dark theme throughout the app',
-            value: darkMode,
-            onPress: () => {
-              setDarkMode(!darkMode);
-              updateSetting('darkMode', !darkMode);
-            }
-          })}
-          {renderSettingItem({
-            icon: 'finger-print',
-            title: 'Biometric Authentication',
-            subtitle: 'Use fingerprint or face ID to sign in',
-            value: biometricAuth,
-            onPress: () => {
-              setBiometricAuth(!biometricAuth);
-              updateSetting('biometricAuth', !biometricAuth);
-            }
-          })}
-          {renderSettingItem({
             icon: 'sync',
             title: 'Auto Sync',
             subtitle: 'Automatically sync data in background',
@@ -212,27 +177,51 @@ export default function SettingsScreen({ navigation }) {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
+          <Text style={styles.sectionTitle}>Portfolio</Text>
           {renderSettingItem({
-            icon: 'person-circle',
-            title: 'Edit Profile',
-            subtitle: 'Update your personal information',
+            icon: 'refresh',
+            title: 'Reset Risk Profile',
+            subtitle: 'Retake the risk assessment quiz',
             value: null,
-            onPress: () => Alert.alert('Coming Soon', 'Profile editing will be available soon!')
+            type: 'action',
+            onPress: () => Alert.alert(
+              'Reset Risk Profile',
+              'This will clear your current risk profile and recommendations. Continue?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                  text: 'Reset', 
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      const currentUser = auth.currentUser;
+                      if (currentUser) {
+                        await updateDoc(doc(db, 'users', currentUser.uid), {
+                          quizCompleted: false,
+                          riskProfile: null,
+                          lastUpdated: new Date()
+                        });
+                        Alert.alert('Success', 'Risk profile reset. Please retake the quiz.');
+                        navigation.reset({
+                          index: 0,
+                          routes: [{ name: 'RiskQuiz' }],
+                        });
+                      }
+                    } catch (error) {
+                      Alert.alert('Error', 'Failed to reset risk profile');
+                    }
+                  }
+                }
+              ]
+            )
           })}
           {renderSettingItem({
-            icon: 'shield-checkmark',
-            title: 'Privacy & Security',
-            subtitle: 'Manage your privacy settings',
+            icon: 'download',
+            title: 'Export Portfolio',
+            subtitle: 'Download your investment data',
             value: null,
-            onPress: () => Alert.alert('Coming Soon', 'Privacy settings will be available soon!')
-          })}
-          {renderSettingItem({
-            icon: 'card',
-            title: 'Payment Methods',
-            subtitle: 'Manage your payment options',
-            value: null,
-            onPress: () => Alert.alert('Coming Soon', 'Payment methods will be available soon!')
+            type: 'action',
+            onPress: () => Alert.alert('Export Portfolio', 'Portfolio export feature coming soon!')
           })}
         </View>
 
@@ -264,7 +253,11 @@ export default function SettingsScreen({ navigation }) {
             title: 'About',
             subtitle: 'App version and information',
             value: null,
-            onPress: () => Alert.alert('About FlexFinance', 'Version 1.0.0\n\nA modern investment app for beginners.')
+            type: 'action',
+            onPress: () => Alert.alert(
+              'About FlexFinance',
+              'Version 1.0.0\n\nA modern investment app powered by AI for personalized stock recommendations.\n\n• AI-driven stock analysis\n• Risk-based recommendations\n• Real-time portfolio tracking\n• Paper trading simulator\n\nBuilt for beginner investors.'
+            )
           })}
         </View>
 
@@ -281,10 +274,7 @@ export default function SettingsScreen({ navigation }) {
             <Ionicons name="log-out" size={20} color="#ef4444" />
             <Text style={styles.dangerButtonText}>Sign Out</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.dangerButton, styles.deleteButton]} onPress={handleDeleteAccount}>
-            <Ionicons name="trash" size={20} color="#ef4444" />
-            <Text style={styles.dangerButtonText}>Delete Account</Text>
-          </TouchableOpacity>
+
         </View>
 
         <View style={styles.footer}>

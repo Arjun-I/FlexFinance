@@ -1,5 +1,5 @@
 // StockComparison.js - Side-by-side Stock Comparison Component
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,32 +10,54 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import stockGenerationService from '../services/stockGenerationService';
 
 const { width } = Dimensions.get('window');
 
-export default function StockComparison({ navigation }) {
+export default function StockComparison({ onNavigateToInvestments }) {
   const [stockPairs, setStockPairs] = useState([]);
   const [currentPairIndex, setCurrentPairIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [allPairsCompleted, setAllPairsCompleted] = useState(false);
+  const [dailyLimitInfo, setDailyLimitInfo] = useState(null);
+  const [timeUntilReset, setTimeUntilReset] = useState(null);
 
   useEffect(() => {
-    console.log('🔄 StockComparison mounted/focused');
     loadStockPairs();
   }, []);
+
+  // Reload data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      // Refreshing data on focus
+      loadStockPairs();
+    }, [])
+  );
 
   const loadStockPairs = async () => {
     try {
       setLoading(true);
-      console.log('🔄 Loading stock pairs...');
-      const pairs = await stockGenerationService.getStockPairs();
-      setStockPairs(pairs);
+      console.log('🚀 Starting loadStockPairs...');
       
-      console.log(`📊 Loaded ${pairs.length} stock pairs`);
+      // Skip daily limit check for now to restore functionality
+      // TODO: Re-enable after fixing the core issue
+      // const limitInfo = await stockGenerationService.checkDailyLimit();
+      // setDailyLimitInfo(limitInfo);
+      
+      // Loading stock pairs
+      console.log('🔍 Getting stock pairs...');
+      const pairs = await stockGenerationService.getStockPairs();
+      console.log('📊 Stock pairs retrieved:', pairs.length);
       
       if (pairs.length === 0) {
-        console.log('🔄 No stock pairs found, generating new ones...');
+        console.log('⚠️ No stock pairs found in Firebase, checking if user has context...');
+        // Force load user context first
+        await stockGenerationService.loadUserContext();
+      }
+      
+      if (pairs.length === 0) {
+        console.log('⚠️ No stock pairs found, generating new ones...');
         await generateMoreStocks();
       } else {
         // Get user choices to filter out rejected stocks
@@ -50,13 +72,11 @@ export default function StockComparison({ navigation }) {
           return !stock1Rejected && !stock2Rejected;
         });
         
-        console.log(`🧹 Filtered ${pairs.length - validPairs.length} pairs containing rejected stocks`);
-        console.log(`📊 ${validPairs.length} valid pairs remaining`);
+        // Filtered out rejected stock pairs
         
         setStockPairs(validPairs);
         
         if (validPairs.length === 0) {
-          console.log('🎯 No valid pairs remaining, showing generate more screen');
           setCurrentPairIndex(0);
           setAllPairsCompleted(true);
         } else {
@@ -92,42 +112,66 @@ export default function StockComparison({ navigation }) {
 
   const handleChoice = async (symbol, choice, stockData) => {
     try {
-      console.log(`📝 Handling choice: ${symbol} = ${choice} (pair ${currentPairIndex + 1}/${stockPairs.length})`);
-      
       // Record user choice for LLM learning
       await stockGenerationService.recordUserChoice(symbol, choice, stockData);
+      
+      // Update daily limit info after successful choice
+      const limitInfo = await stockGenerationService.checkDailyLimit();
+      setDailyLimitInfo(limitInfo);
+      
+      // Show feedback for user choice
+      if (choice === 'like' || choice === 'accept') {
+        Alert.alert(
+          '✅ Added to Portfolio',
+          `${stockData.name || symbol} has been added to your investments as a watchlist item. You can buy shares from the Investments tab.`,
+          [
+            { text: 'View Investments', onPress: onNavigateToInvestments },
+            { text: 'Continue Swiping', style: 'cancel' }
+          ]
+        );
+      }
       
       // Always move to next pair immediately after choice
       const nextPairIndex = currentPairIndex + 1;
       
       if (nextPairIndex >= stockPairs.length) {
-        console.log('🎯 Completed all pairs, showing generate more screen...');
         // Set to an invalid index to show the "Generate More" screen
         setCurrentPairIndex(stockPairs.length);
         setAllPairsCompleted(true);
         // Don't auto-generate, let user click the button
       } else {
         // Move to next pair
-        console.log(`➡️ Moving to pair ${nextPairIndex + 1}`);
         setCurrentPairIndex(nextPairIndex);
       }
     } catch (error) {
       console.error('❌ Error recording choice:', error);
+      if (error.message.includes('Daily limit')) {
+        Alert.alert(
+          '⏰ Daily Limit Reached',
+          error.message,
+          [{ text: 'OK', style: 'default' }]
+        );
+        // Reload to update the UI
+        loadStockPairs();
+      } else {
+        Alert.alert('Error', 'Failed to record your choice. Please try again.');
+      }
     }
   };
 
   const generateMoreStocks = async () => {
     try {
       setLoading(true);
-      console.log('🔄 Generating fresh stock recommendations...');
+      console.log('🔄 Starting stock generation...');
       
       // Clear old recommendations to prevent repeats
       await stockGenerationService.clearAllStocks();
-      console.log('🧹 Cleared old recommendations');
+      console.log('🗑️ Cleared old stocks');
       
       // Generate new personalized recommendations
+      console.log('🎯 Generating personalized stocks...');
       await stockGenerationService.generatePersonalizedStocks(10);
-      console.log('✅ Generated fresh stocks successfully');
+      console.log('✅ Generated personalized stocks');
       
       // Reload pairs and reset completion state
       setAllPairsCompleted(false);
@@ -135,7 +179,31 @@ export default function StockComparison({ navigation }) {
       setCurrentPairIndex(0);
     } catch (error) {
       console.error('❌ Error generating more stocks:', error);
-      Alert.alert('Error', 'Failed to generate more recommendations. Please try again.');
+      Alert.alert(
+        'Error', 
+        'Failed to generate recommendations. This might be due to API limits. Try again in a few minutes or check your internet connection.',
+        [
+          { text: 'OK', style: 'default' },
+          { 
+            text: 'Try Fallback', 
+            onPress: async () => {
+              try {
+                setLoading(true);
+                console.log('🚨 Using emergency fallback generation...');
+                // Force fallback by clearing everything and calling generation
+                await stockGenerationService.clearAllStocks();
+                await stockGenerationService.generateInitialRecommendations();
+                await loadStockPairs();
+              } catch (fallbackError) {
+                console.error('❌ Even fallback failed:', fallbackError);
+                Alert.alert('Error', 'All generation methods failed. Please check your connection and try again later.');
+              } finally {
+                setLoading(false);
+              }
+            }
+          }
+        ]
+      );
     } finally {
       setLoading(false);
     }
@@ -166,30 +234,38 @@ export default function StockComparison({ navigation }) {
 
   const currentPair = stockPairs[currentPairIndex];
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Ionicons name="refresh" size={40} color="#6366f1" />
-        <Text style={styles.loadingText}>Generating stock recommendations...</Text>
-        <Text style={styles.loadingSubtext}>This may take a few moments</Text>
-      </View>
-    );
-  }
-
-  if (stockPairs.length === 0) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Ionicons name="trending-up" size={60} color="#6366f1" />
-        <Text style={styles.emptyTitle}>No Stocks Available</Text>
-        <Text style={styles.emptySubtitle}>No stock recommendations are currently available</Text>
-        <TouchableOpacity style={styles.generateButton} onPress={generateMoreStocks}>
-          <Text style={styles.generateButtonText}>Generate Recommendations</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   if (!currentPair || currentPairIndex >= stockPairs.length) {
+    // Show daily limit reached screen
+    if (dailyLimitInfo?.hasReachedLimit) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="time" size={60} color="#f59e0b" />
+          <Text style={styles.emptyTitle}>Daily Limit Reached</Text>
+          <Text style={styles.emptySubtitle}>
+            You've selected {dailyLimitInfo.selectionsToday} stocks today
+          </Text>
+          <Text style={styles.limitText}>
+            Daily limit: 10 stock selections
+          </Text>
+          {timeUntilReset && (
+            <View style={styles.countdownContainer}>
+              <Ionicons name="hourglass" size={24} color="#94a3b8" />
+              <Text style={styles.countdownText}>
+                Reset in: {timeUntilReset}
+              </Text>
+            </View>
+          )}
+          <TouchableOpacity 
+            style={[styles.generateButton, styles.disabledButton]} 
+            disabled={true}
+          >
+            <Text style={styles.disabledButtonText}>Come back tomorrow!</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    
+    // Regular completion screen
     return (
       <View style={styles.emptyContainer}>
         <Ionicons name="trending-up" size={60} color="#6366f1" />
@@ -210,6 +286,11 @@ export default function StockComparison({ navigation }) {
         <Text style={styles.headerSubtitle}>
           {currentPairIndex + 1} of {stockPairs.length} pairs
         </Text>
+        {dailyLimitInfo && dailyLimitInfo.selectionsToday > 0 && (
+          <Text style={styles.dailyLimitText}>
+            {dailyLimitInfo.selectionsToday}/10 daily selections used
+          </Text>
+        )}
       </View>
 
       {/* Stock Comparison */}
@@ -248,7 +329,7 @@ export default function StockComparison({ navigation }) {
 }
 
 const StockCard = ({ stock, onChoice, position }) => {
-  const [showDetails, setShowDetails] = useState(false);
+  const [showDetails, setShowDetails] = useState(true); // Show details by default
 
   if (!stock) return null;
 
@@ -279,11 +360,6 @@ const StockCard = ({ stock, onChoice, position }) => {
 
       {/* Market Cap */}
       <Text style={styles.marketCap}>Market Cap: {stock.marketCap}</Text>
-
-      {/* Analysis Preview */}
-      <Text style={styles.analysisPreview}>
-        {stock.analysis?.substring(0, 100)}...
-      </Text>
 
       {/* Toggle Details */}
       <TouchableOpacity
@@ -608,5 +684,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 4,
+  },
+  limitText: {
+    color: '#f59e0b',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  countdownContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(148, 163, 184, 0.1)',
+    borderRadius: 8,
+  },
+  countdownText: {
+    color: '#94a3b8',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  disabledButton: {
+    backgroundColor: '#374151',
+    borderColor: '#374151',
+  },
+  disabledButtonText: {
+    color: '#9ca3af',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  dailyLimitText: {
+    color: '#f59e0b',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 4,
+    textAlign: 'center',
   },
 }); 

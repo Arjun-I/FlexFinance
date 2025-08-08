@@ -12,15 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  VictoryPie,
-  VictoryChart,
-  VictoryLine,
-  VictoryAxis,
-  VictoryTheme,
-  VictoryTooltip,
-  VictoryLabel,
-} from 'victory-native';
+// Removed unused Victory imports
 import {
   collection,
   doc,

@@ -26,9 +26,7 @@ export default {
       package: 'com.flexfinance.app',
       permissions: [
         'INTERNET',
-        'ACCESS_NETWORK_STATE',
-        'WRITE_EXTERNAL_STORAGE',
-        'READ_EXTERNAL_STORAGE'
+        'ACCESS_NETWORK_STATE'
       ],
       versionCode: 1,
       minSdkVersion: 21,
@@ -69,10 +67,10 @@ export default {
       // New secure backend configuration
       EXPO_PUBLIC_PROXY_ENABLED: process.env.EXPO_PUBLIC_PROXY_ENABLED || 'false',
       EXPO_PUBLIC_PROXY_URL: process.env.EXPO_PUBLIC_PROXY_URL || 'https://your-proxy-server.com/api',
-      EXPO_PUBLIC_SECURE_LLM_ENDPOINT: process.env.EXPO_PUBLIC_SECURE_LLM_ENDPOINT || 'https://your-secure-backend.com/api/llm',
-      eas: {
-        projectId: "1f7a1663-5908-4d6f-a3c1-03a0611900af"
-      }
+      EXPO_PUBLIC_SECURE_LLM_ENDPOINT: process.env.EXPO_PUBLIC_SECURE_LLM_ENDPOINT || 'https://your-secure-backend.com/api/llm'
+    },
+    eas: {
+      projectId: "1f7a1663-5908-4d6f-a3c1-03a0611900af"
     }
   }
 };

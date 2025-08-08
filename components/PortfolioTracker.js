@@ -45,27 +45,36 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
       // Update holdings with current prices
       const updatedHoldings = portfolio.map(holding => {
         const quote = quotes.find(q => q.symbol === holding.symbol);
-        const currentPrice = quote ? quote.price : holding.averagePrice || 0;
-        const currentValue = holding.shares * currentPrice;
+        const currentPrice = parseFloat(quote ? quote.price : holding.averagePrice) || 0;
+        const shares = parseFloat(holding.shares) || 0;
+        const averagePrice = parseFloat(holding.averagePrice) || 0;
+        const currentValue = shares * currentPrice;
+        
         const changeAbsolute = quote && typeof quote.previousClose === 'number'
           ? currentPrice - quote.previousClose
-          : currentPrice - (holding.averagePrice || 0);
+          : currentPrice - averagePrice;
         const changePercent = quote && typeof quote.previousClose === 'number' && quote.previousClose > 0
           ? (changeAbsolute / quote.previousClose) * 100
-          : (holding.averagePrice ? ((currentPrice - holding.averagePrice) / holding.averagePrice) * 100 : 0);
+          : (averagePrice > 0 ? ((currentPrice - averagePrice) / averagePrice) * 100 : 0);
 
         return {
           ...holding,
-          currentPrice,
-          currentValue,
-          change: changeAbsolute,
-          changePercent,
-          changeFormatted: `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`,
+          shares,
+          averagePrice,
+          currentPrice: isNaN(currentPrice) ? 0 : currentPrice,
+          currentValue: isNaN(currentValue) ? 0 : currentValue,
+          change: isNaN(changeAbsolute) ? 0 : changeAbsolute,
+          changePercent: isNaN(changePercent) ? 0 : changePercent,
+          changeFormatted: `${changePercent >= 0 ? '+' : ''}${(isNaN(changePercent) ? 0 : changePercent).toFixed(2)}%`,
         };
       });
 
-      const equity = updatedHoldings.reduce((sum, holding) => sum + holding.currentValue, 0);
-      const total = equity + (cashBalance || 0);
+      const equity = updatedHoldings.reduce((sum, holding) => {
+        const value = parseFloat(holding.currentValue) || 0;
+        return sum + (isNaN(value) ? 0 : value);
+      }, 0);
+      const cashBal = parseFloat(cashBalance) || 0;
+      const total = equity + cashBal;
 
       setHoldings(updatedHoldings);
       setTotalEquity(equity);
@@ -74,7 +83,8 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
       
       // Notify parent component of portfolio value change
       if (onPortfolioValueChange) {
-        onPortfolioValueChange(total);
+        const safeTotal = isNaN(total) ? 0 : total;
+        onPortfolioValueChange(safeTotal);
       }
     } catch (error) {
       console.error('Error updating portfolio data:', error);
@@ -188,7 +198,14 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
           cashBalance: cashBalance - totalCost
         });
 
-        Alert.alert('Success', `Bought ${shares} shares of ${tradingStock.symbol} at $${price.toFixed(2)}`);
+        Alert.alert(
+          '✅ Purchase Successful',
+          `Bought ${shares} shares of ${tradingStock.symbol}\n\n` +
+          `• Price per share: ${formatCurrency(price)}\n` +
+          `• Total cost: ${formatCurrency(totalCost)}\n` +
+          `• Remaining cash: ${formatCurrency(cashBalance - totalCost)}`,
+          [{ text: 'Great!', style: 'default' }]
+        );
       } else if (tradingStock.action === 'sell') {
         // Sell logic
         if (shares > tradingStock.shares) {
@@ -224,7 +241,15 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
           });
 
           const profit = soldValue - (shares * existingData.averagePrice);
-          Alert.alert('Success', `Sold ${shares} shares of ${tradingStock.symbol} for $${soldValue.toFixed(2)} (${profit >= 0 ? '+' : ''}$${profit.toFixed(2)})`);
+          Alert.alert(
+            '💰 Sale Successful', 
+            `Sold ${shares} shares of ${tradingStock.symbol}\n\n` +
+            `• Sale price: ${formatCurrency(price)} per share\n` +
+            `• Total received: ${formatCurrency(soldValue)}\n` +
+            `• Profit/Loss: ${profit >= 0 ? '+' : ''}${formatCurrency(Math.abs(profit))} ${profit >= 0 ? '📈' : '📉'}\n` +
+            `• New cash balance: ${formatCurrency(cashBalance + soldValue)}`,
+            [{ text: 'Excellent!', style: 'default' }]
+          );
         }
       }
 
@@ -337,14 +362,16 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
                   </Text>
                 </View>
                 
-                {/* Buy/Sell Actions */}
+                {/* Trade Actions */}
                 <View style={styles.actionsRow}>
                   <TouchableOpacity 
                     style={styles.buyButton}
                     onPress={() => openTradeModal(holding, 'buy')}
                   >
-                    <Ionicons name="add-circle" size={16} color="#ffffff" />
-                    <Text style={styles.actionButtonText}>Buy</Text>
+                    <Ionicons name="trending-up" size={16} color="#ffffff" />
+                    <Text style={styles.actionButtonText}>
+                      {holding.shares === 0 ? 'Buy Shares' : 'Buy More'}
+                    </Text>
                   </TouchableOpacity>
                   
                   {holding.shares > 0 && (
@@ -352,8 +379,8 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
                       style={styles.sellButton}
                       onPress={() => openTradeModal(holding, 'sell')}
                     >
-                      <Ionicons name="remove-circle" size={16} color="#ffffff" />
-                      <Text style={styles.actionButtonText}>Sell</Text>
+                      <Ionicons name="trending-down" size={16} color="#ffffff" />
+                      <Text style={styles.actionButtonText}>Sell Shares</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -381,19 +408,31 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
-              {tradingStock?.action === 'buy' ? 'Buy' : 'Sell'} {tradingStock?.symbol}
+              {tradingStock?.action === 'buy' ? 
+                (tradingStock?.shares === 0 ? 'Buy Shares' : 'Buy More Shares') : 
+                'Sell Shares'} - {tradingStock?.symbol}
             </Text>
             
             <View style={styles.modalInfo}>
               <Text style={styles.modalInfoText}>
-                Current Price: ${tradingStock ? formatCurrency(tradingStock.currentPrice || 0) : '0.00'}
+                Current Price: {tradingStock ? formatCurrency(tradingStock.currentPrice || 0) : '$0.00'}
               </Text>
               <Text style={styles.modalInfoText}>
-                Available Cash: ${formatCurrency(cashBalance || 0)}
+                Available Cash: {formatCurrency(cashBalance || 0)}
               </Text>
               {tradingStock?.action === 'sell' && (
                 <Text style={styles.modalInfoText}>
-                  You Own: {tradingStock.shares} shares
+                  You Own: {tradingStock.shares} shares ({formatCurrency((tradingStock.shares || 0) * (tradingStock.currentPrice || 0))})
+                </Text>
+              )}
+              {tradingStock?.action === 'buy' && tradingStock?.shares > 0 && (
+                <Text style={styles.modalInfoText}>
+                  Current Position: {tradingStock.shares} shares
+                </Text>
+              )}
+              {tradingStock?.action === 'buy' && (
+                <Text style={styles.modalInfoText}>
+                  Total Cost: {formatCurrency((parseInt(tradeAmount) || 0) * (tradingStock.currentPrice || 0))}
                 </Text>
               )}
             </View>
@@ -406,6 +445,20 @@ export default function PortfolioTracker({ portfolio, cashBalance, onRefresh, on
               keyboardType="numeric"
               placeholderTextColor="#94a3b8"
             />
+            
+            {/* Show estimated cost/proceeds */}
+            {tradeAmount && tradingStock && (
+              <View style={styles.estimateContainer}>
+                <Text style={styles.estimateText}>
+                  {tradingStock.action === 'buy' ? 'Estimated Cost:' : 'Estimated Proceeds:'} {' '}
+                  <Text style={[styles.estimateAmount, { 
+                    color: tradingStock.action === 'buy' ? '#ef4444' : '#10b981' 
+                  }]}>
+                    {formatCurrency((parseInt(tradeAmount) || 0) * (tradingStock.currentPrice || 0))}
+                  </Text>
+                </Text>
+              </View>
+            )}
 
             <View style={styles.modalActions}>
               <TouchableOpacity
@@ -692,5 +745,22 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  estimateContainer: {
+    backgroundColor: '#1e293b',
+    padding: 12,
+    borderRadius: 6,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  estimateText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  estimateAmount: {
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 }); 
