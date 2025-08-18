@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
+  TouchableOpacity,
   ScrollView,
   Alert,
+  Dimensions,
+  Platform,
   ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { auth, db } from '../firebase';
+import EnhancedLoadingScreen from '../components/EnhancedLoadingScreen';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 const questions = [
@@ -17,50 +20,50 @@ const questions = [
     id: 1,
     question: 'Your investment drops 15% in a week. What do you do?',
     options: [
-      { text: '💸 Sell immediately', scores: { volatility: 1, timeHorizon: 1 } },
-      { text: '⏳ Wait and reassess in a month', scores: { volatility: 2, timeHorizon: 2 } },
-      { text: '💎 Hold, long-term view', scores: { volatility: 3, timeHorizon: 3 } },
-      { text: '🚀 Buy more while it is cheap', scores: { volatility: 4, timeHorizon: 4 } },
+      { text: 'Sell immediately', scores: { volatility: 1, timeHorizon: 1 } },
+      { text: 'Wait and reassess in a month', scores: { volatility: 2, timeHorizon: 2 } },
+      { text: 'Hold, long-term view', scores: { volatility: 3, timeHorizon: 3 } },
+      { text: 'Buy more while it is cheap', scores: { volatility: 4, timeHorizon: 4 } },
     ],
   },
   {
     id: 2,
     question: 'How soon might you need this money?',
     options: [
-      { text: '⚡ In the next 6 months', scores: { liquidity: 1, timeHorizon: 1 } },
-      { text: '📅 1–3 years', scores: { liquidity: 2, timeHorizon: 2 } },
-      { text: '📈 3–5 years', scores: { liquidity: 3, timeHorizon: 3 } },
-      { text: '🏆 After 5 years', scores: { liquidity: 4, timeHorizon: 4 } },
+      { text: 'In the next 6 months', scores: { liquidity: 1, timeHorizon: 1 } },
+      { text: '1–2 years', scores: { liquidity: 2, timeHorizon: 2 } },
+      { text: '3–5 years', scores: { liquidity: 3, timeHorizon: 3 } },
+      { text: '5+ years', scores: { liquidity: 4, timeHorizon: 4 } },
     ],
   },
   {
     id: 3,
     question: 'Which best describes your investment experience?',
     options: [
-      { text: '🌱 None', scores: { knowledge: 1, volatility: 1 } },
-      { text: '📚 Beginner', scores: { knowledge: 2, volatility: 2 } },
-      { text: '🎯 Intermediate', scores: { knowledge: 3, volatility: 3 } },
-      { text: '🏅 Expert', scores: { knowledge: 4, volatility: 4 } },
+      { text: 'None', scores: { knowledge: 1, volatility: 1 } },
+      { text: 'Beginner', scores: { knowledge: 2, volatility: 2 } },
+      { text: 'Intermediate', scores: { knowledge: 3, volatility: 3 } },
+      { text: 'Expert', scores: { knowledge: 4, volatility: 4 } },
     ],
   },
   {
     id: 4,
     question: 'You hear about a trending high-risk stock. Your reaction?',
     options: [
-      { text: '🚫 Avoid it completely', scores: { volatility: 1 } },
-      { text: '🔍 Research but likely pass', scores: { volatility: 2 } },
-      { text: '💰 Consider a small investment', scores: { volatility: 3 } },
-      { text: '🎲 Jump in for big gains', scores: { volatility: 4 } },
+      { text: 'Avoid it completely', scores: { volatility: 1 } },
+      { text: 'Research but likely pass', scores: { volatility: 2 } },
+      { text: 'Consider a small investment', scores: { volatility: 3 } },
+      { text: 'Jump in for big gains', scores: { volatility: 4 } },
     ],
   },
   {
     id: 5,
     question: 'How important is ethical investing to you?',
     options: [
-      { text: '🌍 Avoid all harmful industries', scores: { ethics: 4 } },
-      { text: '🌿 Prefer green & clean investments', scores: { ethics: 3 } },
-      { text: '⚖️ Neutral, case-by-case basis', scores: { ethics: 2 } },
-      { text: '💵 Returns come first', scores: { ethics: 1 } },
+      { text: 'Avoid all harmful industries', scores: { ethics: 4 } },
+      { text: 'Prefer green & clean investments', scores: { ethics: 3 } },
+      { text: 'Neutral, case-by-case basis', scores: { ethics: 2 } },
+      { text: 'Returns come first', scores: { ethics: 1 } },
     ],
   },
 ];
@@ -224,14 +227,7 @@ export default function RiskQuiz({ navigation, user }) {
   };
 
   if (loading) {
-    return (
-      <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#6366f1" />
-          <Text style={styles.loadingText}>Loading Risk Assessment...</Text>
-        </View>
-      </LinearGradient>
-    );
+    return <EnhancedLoadingScreen message="Loading Risk Assessment..." />;
   }
 
   if (showResults) {
@@ -241,7 +237,7 @@ export default function RiskQuiz({ navigation, user }) {
       <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.container}>
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
           <View style={styles.resultsContainer}>
-            <Text style={styles.resultsTitle}>🎯 Your Risk Profile</Text>
+            <Text style={styles.resultsTitle}>Your Risk Profile</Text>
             
             <View style={[styles.profileCard, { borderColor: profile.color }]}>
               <Text style={[styles.profileLevel, { color: profile.color }]}>
@@ -254,10 +250,10 @@ export default function RiskQuiz({ navigation, user }) {
 
             {/* Detailed Scores */}
             <View style={styles.scoresContainer}>
-              <Text style={styles.scoresTitle}>📊 Detailed Breakdown</Text>
+              <Text style={styles.scoresTitle}>Detailed Breakdown</Text>
               
               <View style={styles.scoreItem}>
-                <Text style={styles.scoreLabel}>🎢 Risk Tolerance:</Text>
+                <Text style={styles.scoreLabel}>Risk Tolerance:</Text>
                 <View style={styles.scoreBar}>
                   <View 
                     style={[styles.scoreProgress, { 
@@ -270,7 +266,7 @@ export default function RiskQuiz({ navigation, user }) {
               </View>
 
               <View style={styles.scoreItem}>
-                <Text style={styles.scoreLabel}>⏰ Time Horizon:</Text>
+                <Text style={styles.scoreLabel}>Time Horizon:</Text>
                 <View style={styles.scoreBar}>
                   <View 
                     style={[styles.scoreProgress, { 
@@ -283,7 +279,7 @@ export default function RiskQuiz({ navigation, user }) {
               </View>
 
               <View style={styles.scoreItem}>
-                <Text style={styles.scoreLabel}>💧 Liquidity Need:</Text>
+                <Text style={styles.scoreLabel}>Liquidity Need:</Text>
                 <View style={styles.scoreBar}>
                   <View 
                     style={[styles.scoreProgress, { 
@@ -296,7 +292,7 @@ export default function RiskQuiz({ navigation, user }) {
               </View>
 
               <View style={styles.scoreItem}>
-                <Text style={styles.scoreLabel}>🧠 Experience:</Text>
+                <Text style={styles.scoreLabel}>Experience:</Text>
                 <View style={styles.scoreBar}>
                   <View 
                     style={[styles.scoreProgress, { 
@@ -309,7 +305,7 @@ export default function RiskQuiz({ navigation, user }) {
               </View>
 
               <View style={styles.scoreItem}>
-                <Text style={styles.scoreLabel}>🌍 Ethics Focus:</Text>
+                <Text style={styles.scoreLabel}>Ethics Focus:</Text>
                 <View style={styles.scoreBar}>
                   <View 
                     style={[styles.scoreProgress, { 
@@ -344,10 +340,10 @@ export default function RiskQuiz({ navigation, user }) {
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={styles.recommendationButton}
+                style={styles.recommendationButton} 
                 onPress={() => navigation?.navigate?.('StockComparison')}
               >
-                <Text style={styles.recommendationButtonText}>📈 Get Recommendations</Text>
+                <Text style={styles.recommendationButtonText}>Get Recommendations</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -365,7 +361,7 @@ export default function RiskQuiz({ navigation, user }) {
         
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>🎯 Risk Assessment</Text>
+          <Text style={styles.title}>Risk Assessment</Text>
           <Text style={styles.subtitle}>
             Answer {questions.length} questions to get personalized recommendations
           </Text>

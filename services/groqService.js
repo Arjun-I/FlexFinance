@@ -15,7 +15,7 @@ class GroqService {
                   process.env.EXPO_PUBLIC_GROQ_API_KEY;
     
     if (!this.apiKey) {
-      console.warn('⚠️ Groq API key not found. Please add EXPO_PUBLIC_GROQ_API_KEY to your .env file');
+      console.warn('Groq API key not found. Please add EXPO_PUBLIC_GROQ_API_KEY to your .env file');
     }
     
     console.log('🔑 Groq API Key Status:', {
@@ -31,7 +31,7 @@ class GroqService {
     }
 
     try {
-      console.log('🤖 Calling Groq LLM...');
+      console.log('Calling Groq LLM...');
       
       const response = await fetch(GROQ_API_ENDPOINT, {
         method: 'POST',
@@ -56,23 +56,23 @@ class GroqService {
         }),
       });
 
-      console.log('📡 Groq response status:', response.status);
+      console.log('Groq response status:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Groq API error:', response.status, errorData);
+        console.error('Groq API error:', response.status, errorData);
         throw new Error(`Groq API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
       }
 
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content;
       
-      console.log('✅ Groq API call successful');
+      console.log('Groq API call successful');
       console.log('📝 Response content preview:', content?.substring(0, 200) + '...');
       
       return content;
     } catch (error) {
-      console.error('❌ Groq LLM error:', error);
+      console.error('Groq LLM error:', error);
       throw error;
     }
   }
@@ -181,78 +181,42 @@ CRITICAL: Never include stocks from the exclusion list above. Generate completel
       jsonString = jsonString.replace(/,\s*}/g, '}'); // Remove trailing commas
       jsonString = jsonString.replace(/,\s*]/g, ']'); // Remove trailing commas in arrays
       
-      console.log('🔍 Extracted JSON string preview:', jsonString.substring(0, 200) + '...');
+      console.log('Extracted JSON string preview:', jsonString.substring(0, 200) + '...');
       
-      const recommendations = JSON.parse(jsonString);
-      
-      if (!Array.isArray(recommendations)) {
-        throw new Error('Parsed result is not an array');
-      }
-
-      console.log(`✅ Parsed ${recommendations.length} recommendations from Groq`);
-      return recommendations;
-    } catch (error) {
-      console.error('❌ Error parsing Groq recommendations:', error);
-      console.error('📝 Raw response length:', response.length);
-      console.error('📝 Raw response preview:', response.substring(0, 500));
-      
-      // Try to find specific JSON issues and attempt repair
-      if (error instanceof SyntaxError) {
-        console.error('🔍 JSON Syntax Error - attempting to repair incomplete JSON');
+      try {
+        const recommendations = JSON.parse(jsonString);
+        if (Array.isArray(recommendations) && recommendations.length > 0) {
+          console.log(`Parsed ${recommendations.length} recommendations from Groq`);
+          return recommendations;
+        }
+      } catch (parseError) {
+        console.error('JSON Syntax Error - attempting to repair incomplete JSON');
         
         // Try to find the JSON part and repair it
-        const match = response.match(/\[[\s\S]*\]/);
-        if (match) {
-          let jsonPart = match[0];
-          console.error('📝 Extracted JSON part:', jsonPart.substring(0, 300) + '...');
-          
-          // Check for truncation and attempt repair
-          if (jsonPart.includes('...') || !jsonPart.endsWith(']')) {
-            console.log('🔧 Attempting to repair truncated JSON...');
+        const jsonMatch = response.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          try {
+            const repaired = jsonMatch[0]
+              .replace(/,\s*}/g, '}') // Remove trailing commas in objects
+              .replace(/,\s*]/g, ']'); // Remove trailing commas in arrays
             
-            // Remove truncation indicators
-            jsonPart = jsonPart.replace(/\.\.\..*$/, '');
-            
-            // Count and balance braces/brackets
-            let openBraces = 0;
-            let openBrackets = 0;
-            let repaired = '';
-            
-            for (let i = 0; i < jsonPart.length; i++) {
-              const char = jsonPart[i];
-              repaired += char;
-              
-              if (char === '{') openBraces++;
-              if (char === '}') openBraces--;
-              if (char === '[') openBrackets++;
-              if (char === ']') openBrackets--;
+            const repairedResult = JSON.parse(repaired);
+            if (Array.isArray(repairedResult) && repairedResult.length > 0) {
+              console.log(`Successfully repaired and parsed ${repairedResult.length} recommendations`);
+              return repairedResult;
             }
-            
-            // Close unclosed structures
-            while (openBraces > 0) {
-              repaired += '}';
-              openBraces--;
-            }
-            while (openBrackets > 0) {
-              repaired += ']';
-              openBrackets--;
-            }
-            
-            // Try parsing the repaired JSON
-            try {
-              const repairedResult = JSON.parse(repaired);
-              if (Array.isArray(repairedResult) && repairedResult.length > 0) {
-                console.log(`✅ Successfully repaired and parsed ${repairedResult.length} recommendations`);
-                return repairedResult;
-              }
-            } catch (repairError) {
-              console.error('❌ JSON repair failed:', repairError.message);
-            }
+          } catch (repairError) {
+            console.error('JSON repair failed:', repairError.message);
           }
         }
       }
       
-      throw new Error('Failed to parse LLM recommendations');
+      throw new Error('Failed to parse recommendations from Groq response');
+    } catch (error) {
+      console.error('Error parsing Groq recommendations:', error);
+      console.error('Raw response length:', response.length);
+      console.error('Raw response preview:', response.substring(0, 500));
+      throw error;
     }
   }
 }

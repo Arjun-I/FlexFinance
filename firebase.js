@@ -18,8 +18,8 @@ const requiredFields = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'm
 const missingFields = requiredFields.filter(field => !firebaseConfig[field]);
 
 if (missingFields.length > 0) {
-  console.error('❌ Missing Firebase configuration fields:', missingFields);
-  throw new Error(`Missing required Firebase config: ${missingFields.join(', ')}`);
+  console.error('Missing Firebase configuration fields:', missingFields);
+  throw new Error('Incomplete Firebase configuration');
 }
 
 console.log('🔧 Firebase config loaded:', {
@@ -38,19 +38,17 @@ const initializeFirebase = (() => {
   
   return () => {
     if (initialized) {
-      console.log('🔄 Firebase already initialized, returning existing instances');
+      console.log('Firebase already initialized, returning existing instances');
       return { app, auth, db };
     }
     
     try {
-      const existingApps = getApps();
-      
-      if (existingApps.length === 0) {
+      if (getApps().length > 0) {
+        console.log('Using existing Firebase app');
+        app = getApp();
+      } else {
         console.log('🔥 First-time Firebase initialization...');
         app = initializeApp(firebaseConfig);
-      } else {
-        console.log('♻️ Using existing Firebase app');
-        app = existingApps[0];
       }
       
       // Initialize auth with error handling
@@ -59,16 +57,11 @@ const initializeFirebase = (() => {
           auth = initializeAuth(app, {
             persistence: getReactNativePersistence(AsyncStorage)
           });
-          console.log('✅ Firebase Auth initialized with persistence');
+          console.log('Firebase Auth initialized with persistence');
         }
       } catch (authError) {
-        if (authError.code === 'auth/already-initialized') {
-          auth = getAuth(app);
-          console.log('♻️ Using existing auth instance');
-        } else {
-          console.warn('⚠️ Persistence failed, using default auth:', authError.message);
-          auth = getAuth(app);
-        }
+        console.log('Using existing auth instance');
+        console.warn('Persistence failed, using default auth:', authError.message);
       }
       
       // Initialize Firestore
@@ -77,12 +70,12 @@ const initializeFirebase = (() => {
       }
       
       initialized = true;
-      console.log('✅ Firebase initialization complete');
+      console.log('Firebase initialization complete');
       return { app, auth, db };
       
     } catch (error) {
-      console.error('❌ Firebase initialization failed:', error);
-      throw new Error(`Firebase initialization failed: ${error.message}`);
+      console.error('Firebase initialization failed:', error);
+      throw error;
     }
   };
 })();

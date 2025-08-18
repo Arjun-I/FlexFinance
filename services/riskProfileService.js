@@ -312,10 +312,10 @@ class RiskProfileService {
         lastUpdated: new Date()
       }, { merge: true });
 
-      console.log('✅ Detailed risk profile saved');
+      console.log('Detailed risk profile saved');
       return true;
     } catch (error) {
-      console.error('❌ Error saving risk profile:', error);
+      console.error('Error saving risk profile:', error);
       return false;
     }
   }
@@ -344,7 +344,7 @@ class RiskProfileService {
         timeHorizon: userData.riskProfileDetailed.timeHorizon
       };
     } catch (error) {
-      console.error('❌ Error getting risk profile:', error);
+      console.error('Error getting risk profile:', error);
       return null;
     }
   }

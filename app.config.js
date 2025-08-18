@@ -18,6 +18,7 @@ export default {
     assetBundlePatterns: [
       '**/*'
     ],
+
     android: {
       adaptiveIcon: {
         foregroundImage: './assets/flexlogo.png',
