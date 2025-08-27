@@ -255,7 +255,8 @@ export const getStockQuote = async (symbol) => {
           quote.price = fallbackPrice;
           quote.currentPrice = fallbackPrice;
         } else {
-          throw new Error(`Invalid price data for ${sym} - no valid price available`);
+          console.warn(`Skipping ${sym} - no valid price available`);
+          return null; // Return null instead of throwing error
         }
       }
       
@@ -266,7 +267,8 @@ export const getStockQuote = async (symbol) => {
       return quote;
     } else {
       console.error(`Invalid quote data for ${sym}:`, data);
-      throw new Error('Invalid quote data received');
+      console.warn(`Skipping ${sym} - invalid quote data received`);
+      return null; // Return null instead of throwing error
     }
   } catch (error) {
     if (error.message === 'API_LIMIT_REACHED') {
@@ -275,7 +277,8 @@ export const getStockQuote = async (symbol) => {
       throw error;
     }
     console.error(`Error fetching quote for ${sym}:`, error);
-    throw error;
+    console.warn(`Skipping ${sym} due to fetch error`);
+    return null; // Return null instead of throwing error
   }
 };
 
@@ -307,7 +310,11 @@ export const getMultipleQuotes = async (symbols) => {
     for (const symbol of symbolsToFetch) {
       try {
         const quote = await getStockQuote(symbol);
-        quotes.push(quote);
+        if (quote) { // Only add if quote is valid (not null)
+          quotes.push(quote);
+        } else {
+          console.log(`Skipping ${symbol} - invalid quote data`);
+        }
       } catch (error) {
         if (error.message === 'API_LIMIT_REACHED') {
           // Queue remaining symbols
@@ -319,7 +326,11 @@ export const getMultipleQuotes = async (symbols) => {
     }
   }
   
-  return quotes;
+  // Filter out any null quotes and log summary
+  const validQuotes = quotes.filter(quote => quote !== null);
+  console.log(`✅ Successfully fetched ${validQuotes.length}/${symbols.length} valid quotes`);
+  
+  return validQuotes;
 };
 
 // Get company profile with caching
@@ -348,6 +359,7 @@ export const getCompanyProfile = async (symbol) => {
         sector: data.finnhubIndustry || 'Unknown',
         industry: data.finnhubIndustry || 'Unknown',
         marketCap: data.marketCapitalization ? `${(data.marketCapitalization / 1000000000).toFixed(1)}B` : 'N/A',
+        marketCapitalization: data.marketCapitalization, // Keep raw value for financial calculations
         country: data.country || 'Unknown',
         currency: data.currency || 'USD',
         exchange: data.exchange || 'Unknown',
@@ -404,8 +416,11 @@ export const getCompanyFinancials = async (symbol) => {
   }
   
   try {
-    // Use basic quote data for financial metrics
-    const quote = await getStockQuote(sym);
+    // Get both quote and company profile data
+    const [quote, profile] = await Promise.all([
+      getStockQuote(sym),
+      getCompanyProfile(sym)
+    ]);
     
     const financials = {
       symbol: sym,
@@ -414,6 +429,39 @@ export const getCompanyFinancials = async (symbol) => {
       marketCap: 'N/A',
       source: 'API'
     };
+    
+    // Extract market cap from company profile if available
+    if (profile && profile.marketCapitalization && profile.marketCapitalization > 0) {
+      const marketCap = profile.marketCapitalization;
+      if (marketCap >= 1e12) {
+        financials.marketCap = `${(marketCap / 1e12).toFixed(1)}T`;
+      } else if (marketCap >= 1e9) {
+        financials.marketCap = `${(marketCap / 1e9).toFixed(1)}B`;
+      } else if (marketCap >= 1e6) {
+        financials.marketCap = `${(marketCap / 1e6).toFixed(1)}M`;
+      } else {
+        financials.marketCap = `${marketCap.toFixed(0)}`;
+      }
+      console.log(`API market cap for ${sym}: ${financials.marketCap} (raw: ${marketCap})`);
+    } else {
+      console.log(`No valid market cap from API for ${sym}, will use LLM fallback`);
+    }
+    
+    // Extract P/E ratio from quote if available
+    if (quote && quote.peRatio && quote.peRatio > 0) {
+      financials.peRatio = quote.peRatio.toFixed(1);
+    }
+    
+    // Extract dividend yield from quote if available
+    if (quote && quote.dividendYield !== undefined && quote.dividendYield !== null) {
+      if (quote.dividendYield > 0) {
+        financials.dividendYield = `${(quote.dividendYield * 100).toFixed(2)}%`;
+      } else {
+        financials.dividendYield = '0.0%';
+      }
+    }
+    
+    console.log(`Financial data for ${sym}:`, financials);
     
     setCachedPrice(cacheKey, financials);
     return financials;

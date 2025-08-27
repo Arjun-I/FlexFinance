@@ -283,6 +283,9 @@ const PortfolioPerformanceChart = ({ user, onPress }) => {
       '#ff8b94', '#96ceb4', '#feca57', '#ff9ff3', '#54a0ff'
     ];
 
+    // Use validSectors for the actual pie chart
+    const sectorsToDisplay = validSectors;
+
     return (
       <View style={styles.pieChartContainer}>
         <View style={styles.pieChartHeader}>
@@ -291,31 +294,33 @@ const PortfolioPerformanceChart = ({ user, onPress }) => {
         
         <View style={styles.pieChartContent}>
           <View style={styles.pieChart}>
-            {/* Simple pie chart representation */}
+            {/* Simplified but accurate pie chart representation */}
             <View style={styles.pieChartCircle}>
-              {sectorData.map((item, index) => {
-                const percentage = item.percentage;
-                const color = pieColors[index % pieColors.length];
-                
-                return (
-                  <View
-                    key={index}
-                    style={[
-                      styles.pieSlice,
-                      {
-                        backgroundColor: color,
-                        width: `${percentage}%`,
-                        height: '100%',
-                      }
-                    ]}
-                  />
-                );
-              })}
+              <View style={styles.pieChartInner}>
+                {sectorsToDisplay.map((item, index) => {
+                  const percentage = item.percentage;
+                  const color = pieColors[index % pieColors.length];
+                  
+                  return (
+                    <View
+                      key={index}
+                      style={[
+                        styles.pieSlice,
+                        {
+                          backgroundColor: color,
+                          width: `${percentage}%`,
+                          height: '100%',
+                        }
+                      ]}
+                    />
+                  );
+                })}
+              </View>
             </View>
           </View>
           
           <View style={styles.pieLegend}>
-            {sectorData.map((item, index) => (
+            {sectorsToDisplay.map((item, index) => (
               <View key={index} style={styles.legendItem}>
                 <View style={[
                   styles.legendColor,
@@ -737,6 +742,10 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 50,
     overflow: 'hidden',
+  },
+  pieChartInner: {
+    width: '100%',
+    height: '100%',
     flexDirection: 'row',
   },
   pieSlice: {

@@ -189,7 +189,19 @@ export default function PortfolioTracker_Enhanced({ navigation, user }) {
                   price: parseFloat(item.currentPrice) || 0,
                   sector: item.sector || 'Unknown',
                   industry: item.industry || 'Unknown'
-                }
+                },
+                // Preserve LLM-generated fields when converting to watchlist
+                investmentThesis: item.investmentThesis,
+                technicalAnalysis: item.technicalAnalysis,
+                keyBenefits: item.keyBenefits,
+                keyRisks: item.keyRisks,
+                personalizationScore: item.personalizationScore,
+                confidence: item.confidence,
+                riskAlignment: item.riskAlignment,
+                sectorDiversification: item.sectorDiversification,
+                portfolioFit: item.portfolioFit,
+                riskLevel: item.riskLevel,
+                reason: item.reason
               });
             }
           });
@@ -248,6 +260,18 @@ export default function PortfolioTracker_Enhanced({ navigation, user }) {
               };
             }
             return item;
+          });
+          
+          // Debug: Check for LLM data in watchlist items
+          updatedWatchlist.forEach(item => {
+            if (item.investmentThesis || item.technicalAnalysis) {
+              console.log(`Watchlist LLM data found for ${item.symbol}:`, {
+                hasThesis: !!item.investmentThesis,
+                hasAnalysis: !!item.technicalAnalysis,
+                hasBenefits: !!item.keyBenefits,
+                hasRisks: !!item.keyRisks
+              });
+            }
           });
           
           setWatchlist(updatedWatchlist);
@@ -573,7 +597,19 @@ export default function PortfolioTracker_Enhanced({ navigation, user }) {
               currentPrice: parseFloat(tradingStock.currentPrice) || 0,
               sector: tradingStock.sector || 'Unknown',
               industry: tradingStock.industry || 'Unknown'
-            }
+            },
+            // Preserve LLM-generated fields when adding back to watchlist
+            investmentThesis: tradingStock.investmentThesis,
+            technicalAnalysis: tradingStock.technicalAnalysis,
+            keyBenefits: tradingStock.keyBenefits,
+            keyRisks: tradingStock.keyRisks,
+            personalizationScore: tradingStock.personalizationScore,
+            confidence: tradingStock.confidence,
+            riskAlignment: tradingStock.riskAlignment,
+            sectorDiversification: tradingStock.sectorDiversification,
+            portfolioFit: tradingStock.portfolioFit,
+            riskLevel: tradingStock.riskLevel,
+            reason: tradingStock.reason
           });
           console.log(`Added ${tradingStock.symbol} back to watchlist after selling all shares`);
         } else {
@@ -605,6 +641,42 @@ export default function PortfolioTracker_Enhanced({ navigation, user }) {
     } catch (error) {
       console.error('Trade error:', error);
       Alert.alert('Trade Error', 'Failed to execute trade. Please try again.');
+    }
+  };
+
+  // Handle delete watchlist item
+  const handleDeleteWatchlistItem = async (item) => {
+    console.log('Delete button pressed for:', item.symbol);
+    try {
+      Alert.alert(
+        'Remove from Watchlist',
+        `Are you sure you want to remove ${item.symbol} from your watchlist?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: async () => {
+              console.log('User confirmed deletion of:', item.symbol);
+              // Delete from Firebase
+              const watchlistRef = collection(db, 'users', user.uid, 'watchlist');
+              const watchlistQuery = query(watchlistRef, where('symbol', '==', item.symbol));
+              const watchlistSnapshot = await getDocs(watchlistQuery);
+              
+              console.log(`Found ${watchlistSnapshot.docs.length} documents to delete for ${item.symbol}`);
+              
+              const deletePromises = watchlistSnapshot.docs.map(doc => deleteDoc(doc.ref));
+              await Promise.all(deletePromises);
+              
+              console.log(`Successfully removed ${item.symbol} from watchlist`);
+              Alert.alert('Success', `${item.symbol} has been removed from your watchlist`);
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error deleting watchlist item:', error);
+      Alert.alert('Error', 'Failed to remove item from watchlist');
     }
   };
 
@@ -649,6 +721,22 @@ export default function PortfolioTracker_Enhanced({ navigation, user }) {
       };
     } else {
       console.log('Using basic stock data (should include LLM data for holdings)');
+      // For holdings, ensure LLM fields are at top level
+      enhancedStock = {
+        ...stock,
+        // Ensure LLM fields are available at top level
+        investmentThesis: stock.investmentThesis,
+        technicalAnalysis: stock.technicalAnalysis,
+        keyBenefits: stock.keyBenefits,
+        keyRisks: stock.keyRisks,
+        personalizationScore: stock.personalizationScore,
+        confidence: stock.confidence,
+        riskAlignment: stock.riskAlignment,
+        sectorDiversification: stock.sectorDiversification,
+        portfolioFit: stock.portfolioFit,
+        riskLevel: stock.riskLevel,
+        reason: stock.reason
+      };
     }
     
     setSelectedStock(enhancedStock);
@@ -779,10 +867,13 @@ export default function PortfolioTracker_Enhanced({ navigation, user }) {
   }
 
   const formatCurrency = (amount) => {
+    const num = amount || 0;
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-    }).format(amount || 0);
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(num);
   };
 
   const formatPercent = (percent) => {
@@ -816,15 +907,21 @@ export default function PortfolioTracker_Enhanced({ navigation, user }) {
           <View style={styles.summaryCards}>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Total Value</Text>
-              <Text style={styles.summaryValue}>{formatCurrency(performanceMetrics.totalValue)}</Text>
+              <Text style={styles.summaryValue} numberOfLines={1} adjustsFontSizeToFit={true}>
+                {formatCurrency(performanceMetrics.totalValue)}
+              </Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Cash</Text>
-              <Text style={styles.summaryValue}>{formatCurrency(cashBalance)}</Text>
+              <Text style={styles.summaryValue} numberOfLines={1} adjustsFontSizeToFit={true}>
+                {formatCurrency(cashBalance)}
+              </Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Equity</Text>
-              <Text style={styles.summaryValue}>{formatCurrency(performanceMetrics.totalEquity)}</Text>
+              <Text style={styles.summaryValue} numberOfLines={1} adjustsFontSizeToFit={true}>
+                {formatCurrency(performanceMetrics.totalEquity)}
+              </Text>
             </View>
           </View>
 
@@ -837,7 +934,7 @@ export default function PortfolioTracker_Enhanced({ navigation, user }) {
                 <Text style={[
                   styles.metricValue,
                   { color: performanceMetrics.dailyChange >= 0 ? COLORS.success : COLORS.danger }
-                ]}>
+                ]} numberOfLines={1} adjustsFontSizeToFit={true}>
                   {formatCurrency(performanceMetrics.dailyChange)}
                 </Text>
               </View>
@@ -846,7 +943,7 @@ export default function PortfolioTracker_Enhanced({ navigation, user }) {
                 <Text style={[
                   styles.metricValue,
                   { color: performanceData.totalReturn >= 0 ? COLORS.success : COLORS.danger }
-                ]}>
+                ]} numberOfLines={1} adjustsFontSizeToFit={true}>
                   {formatCurrency(performanceData.totalReturn)} ({formatPercent(performanceData.totalReturnPercent)})
                 </Text>
               </View>
@@ -929,44 +1026,66 @@ export default function PortfolioTracker_Enhanced({ navigation, user }) {
                 onPress={() => handleStockPress(item)}
               >
                 <View style={styles.itemHeader}>
+                  {activeTab === 'watchlist' && (
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => handleDeleteWatchlistItem(item)}
+                    >
+                      <Text style={styles.deleteButtonText}>×</Text>
+                    </TouchableOpacity>
+                  )}
                   <View style={styles.itemInfo}>
                     <View style={styles.itemTitleRow}>
                       <Text style={styles.itemSymbol}>{item.symbol}</Text>
-                      <Text style={styles.itemShares}>{item.shares} shares</Text>
+                      {activeTab === 'holdings' && (
+                        <Text style={styles.itemShares}>{item.shares} shares</Text>
+                      )}
                     </View>
                     <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                    {activeTab === 'watchlist' && item.industry && item.industry !== 'Unknown' && (
+                      <Text style={styles.itemIndustry}>{item.industry}</Text>
+                    )}
                   </View>
                   <View style={styles.itemValues}>
+                    <Text style={styles.itemValue}>
+                      {activeTab === 'holdings' ? formatCurrency(item.currentValue) : formatCurrency(item.currentPrice || item.price || 0)}
+                    </Text>
                     {activeTab === 'holdings' ? (
-                      <>
-                        <Text style={styles.itemValue}>{formatCurrency(item.currentValue)}</Text>
-                        <View style={styles.itemPerformanceRow}>
+                      <View style={styles.itemPerformanceRow}>
+                        <Text style={[
+                          styles.itemGain,
+                          { color: item.gain >= 0 ? COLORS.success : COLORS.danger }
+                        ]}>
+                          {formatCurrency(item.gain)} ({formatPercent(item.gainPercent)})
+                        </Text>
+                        {item.dailyChangeDollar !== undefined && (
+                          <Text style={[
+                            styles.itemDailyChange,
+                            { color: item.dailyChangeDollar >= 0 ? COLORS.success : COLORS.danger }
+                          ]}>
+                            Today: {formatCurrency(item.dailyChangeDollar)} ({formatPercent(item.dailyChangePercent)})
+                          </Text>
+                        )}
+                      </View>
+                    ) : (
+                      <View style={styles.itemPerformanceRow}>
+                        {item.changePercent !== undefined ? (
                           <Text style={[
                             styles.itemGain,
-                            { color: item.gain >= 0 ? COLORS.success : COLORS.danger }
+                            { color: item.changePercent >= 0 ? COLORS.success : COLORS.danger }
                           ]}>
-                            {formatCurrency(item.gain)} ({formatPercent(item.gainPercent)})
+                            {item.changePercent >= 0 ? '+' : ''}{item.changePercent?.toFixed(2) || '0.00'}%
                           </Text>
-                          {item.dailyChangeDollar !== undefined && (
-                            <Text style={[
-                              styles.itemDailyChange,
-                              { color: item.dailyChangeDollar >= 0 ? COLORS.success : COLORS.danger }
-                            ]}>
-                              Today: {formatCurrency(item.dailyChangeDollar)} ({formatPercent(item.dailyChangePercent)})
-                            </Text>
-                          )}
-                        </View>
-                      </>
-                    ) : (
-                      <Text style={styles.itemValue}>{formatCurrency(item.currentPrice)}</Text>
+                        ) : (
+                          <Text style={styles.itemGain}>
+                            Loading...
+                          </Text>
+                        )}
+                      </View>
                     )}
                   </View>
                 </View>
-                <View style={styles.itemDetails}>
-                  <Text style={styles.itemPrice}>
-                    ${item.currentPrice?.toFixed(2) || 'N/A'} per share
-                  </Text>
-                </View>
+
               </TouchableOpacity>
             ))
           ) : (
@@ -1110,6 +1229,7 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     borderRadius: 12,
     marginHorizontal: SPACING.xs,
+    minWidth: 0, // Allow flex shrinking
   },
   summaryLabel: {
     ...TYPOGRAPHY.caption,
@@ -1120,6 +1240,8 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.h3,
     color: COLORS.text.primary,
     fontWeight: '600',
+    flexShrink: 1, // Allow text to shrink
+    minFontSize: 12, // Minimum font size for readability
   },
   performanceSection: {
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -1139,6 +1261,7 @@ const styles = StyleSheet.create({
   },
   metricItem: {
     flex: 1,
+    minWidth: 0, // Allow flex shrinking
   },
   metricLabel: {
     ...TYPOGRAPHY.caption,
@@ -1148,6 +1271,8 @@ const styles = StyleSheet.create({
   metricValue: {
     ...TYPOGRAPHY.body,
     fontWeight: '600',
+    flexShrink: 1, // Allow text to shrink
+    minFontSize: 10, // Minimum font size for readability
   },
   lastUpdateText: {
     ...TYPOGRAPHY.small,
@@ -1244,6 +1369,25 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: SPACING.md,
     marginBottom: SPACING.sm,
+    position: 'relative',
+    paddingRight: SPACING.xl, // Make room for delete button
+  },
+  deleteButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 59, 48, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 48, 0.5)',
+    marginRight: SPACING.sm,
+  },
+  deleteButtonText: {
+    color: '#FF3B30',
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   itemHeader: {
     flexDirection: 'row',
@@ -1331,6 +1475,11 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.text.secondary,
     flex: 1,
+  },
+  itemChange: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '500',
+    marginLeft: SPACING.sm,
   },
   itemSector: {
     ...TYPOGRAPHY.small,

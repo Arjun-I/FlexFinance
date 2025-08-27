@@ -17,6 +17,7 @@ import { doc, getDoc, setDoc, collection, getDocs, addDoc, query, where, deleteD
 import { getStockQuote, getMultipleQuotes, getCompanyProfile, markStockAsViewed } from '../services/finnhubService';
 import stockGenerationService from '../services/stockGenerationService_Enhanced';
 import EnhancedLoadingScreen from './EnhancedLoadingScreen';
+import StockGenerationLoadingScreen from './StockGenerationLoadingScreen';
 import StockDetailsModal from './StockDetailsModal';
 import FullScreenChartModal from './FullScreenChartModal';
 import SharedNavigation from './SharedNavigation';
@@ -77,6 +78,8 @@ export default function StockComparison_Enhanced({ navigation, user }) {
   const [stocks, setStocks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [generationStatus, setGenerationStatus] = useState('Initializing...');
   const [error, setError] = useState(null);
   const [currentPairIndex, setCurrentPairIndex] = useState(0);
   const [priceUpdateTime, setPriceUpdateTime] = useState(new Date());
@@ -261,21 +264,48 @@ export default function StockComparison_Enhanced({ navigation, user }) {
     }
   }, []);
 
+  // Refresh prices function for the refresh button
+  const refreshPrices = useCallback(async () => {
+    if (priceUpdating) return;
+    
+    try {
+      console.log('Refreshing stock prices...');
+      await updateStockPrices();
+    } catch (error) {
+      console.error('Error refreshing prices:', error);
+      Alert.alert('Error', 'Failed to refresh prices. Please try again.');
+    }
+  }, [updateStockPrices, priceUpdating]);
+
   // Generate new stock recommendations with better error handling
   const generateNewStocks = useCallback(async () => {
     if (!user?.uid || generating) return;
 
     setGenerating(true);
     setError(null);
+    setGenerationProgress(0);
+    setGenerationStatus('Initializing...');
+    
     try {
       console.log('Generating new stock recommendations...');
       
-      // Set user ID and generate stocks
+      // Progress tracking function
+      const updateProgress = (progress, status) => {
+        setGenerationProgress(progress);
+        setGenerationStatus(status);
+      };
+      
+      // Set user ID and generate stocks with progress tracking
       stockGenerationService.setUserId(user.uid);
+      updateProgress(20, 'Analyzing market conditions...');
+      
       const newStocks = await stockGenerationService.generatePersonalizedStocks(user, 10);
+      updateProgress(80, 'Finalizing recommendations...');
       
       if (newStocks && newStocks.length > 0) {
         console.log(`Generated ${newStocks.length} fresh stocks`);
+        
+        updateProgress(90, 'Saving recommendations...');
         
         // Clear old stocks from Firebase first
         const recentStocksRef = collection(db, 'users', user.uid, 'recentStocks');
@@ -289,28 +319,30 @@ export default function StockComparison_Enhanced({ navigation, user }) {
         await Promise.all(addPromises);
         console.log('Saved fresh stocks to Firebase');
         
+        updateProgress(100, 'Complete!');
+        
         // Reload stocks
         await loadStocks();
         
         if (newStocks.length < 10) {
-          setError(`Generated ${newStocks.length} stocks (some API data unavailable). More will be available once API limits reset.`);
+          setError(`Great! We found ${newStocks.length} excellent stocks for you. More recommendations will be available soon.`);
         }
       } else {
         console.log('No fresh stocks generated');
         setStocks([]);
-        setError('Unable to fetch fresh recommendations at this time. This may be due to API rate limits. Please try again in a few minutes.');
+        setError('We\'re preparing fresh recommendations for you. This usually takes just a moment.');
       }
     } catch (error) {
       console.error('Error generating new stocks:', error);
       setStocks([]);
       
-      // Provide more specific error messages
+      // Provide more friendly error messages
       if (error.message.includes('API_LIMIT_REACHED') || error.message.includes('rate limit')) {
-        setError('API rate limit reached. Please wait a few minutes and try again. The system will automatically retry in the background.');
+        setError('We\'re getting your recommendations ready. Please wait a moment and try again.');
       } else if (error.message.includes('network') || error.message.includes('connection')) {
-        setError('Network connection issue. Please check your internet connection and try again.');
+        setError('Please check your internet connection and try again.');
       } else {
-        setError('Unable to fetch recommendations right now. Please try again in a few minutes.');
+        setError('We\'re preparing your recommendations. Please try again in a moment.');
       }
     } finally {
       setGenerating(false);
@@ -328,6 +360,14 @@ export default function StockComparison_Enhanced({ navigation, user }) {
       const currentPairStocks = [currentStock, nextStock].filter(Boolean);
       const otherStock = currentPairStocks.find(s => s.symbol !== stock.symbol);
       
+      // Debug stock data
+      console.log(`Stock data for ${stock.symbol}:`, {
+        marketCap: stock.marketCap,
+        personalizationScore: stock.personalizationScore,
+        confidence: stock.confidence,
+        sectorDiversification: stock.sectorDiversification
+      });
+
       // Sanitize stock data to prevent undefined values
       const sanitizedStock = {
         symbol: stock.symbol || '',
@@ -339,7 +379,7 @@ export default function StockComparison_Enhanced({ navigation, user }) {
         sector: stock.sector || 'Unknown',
         industry: stock.industry || 'Unknown',
         marketCap: stock.marketCap || 'N/A',
-        confidence: parseFloat(stock.confidence) || 0,
+        confidence: stock.confidence ? parseFloat(stock.confidence) : 0,
         riskLevel: stock.riskLevel || 'medium',
         reason: stock.reason || 'AI recommendation'
       };
@@ -366,10 +406,10 @@ export default function StockComparison_Enhanced({ navigation, user }) {
         keyRisks: Array.isArray(stock.keyRisks) ? stock.keyRisks.filter(r => r && typeof r === 'string') : 
                   typeof stock.keyRisks === 'string' ? [stock.keyRisks] : ['Risk analysis available'],
         technicalAnalysis: stock.technicalAnalysis || 'Technical analysis not available',
-        personalizationScore: parseFloat(stock.personalizationScore) || 0,
-        sectorDiversification: parseFloat(stock.sectorDiversification) || 0,
-        riskAlignment: parseFloat(stock.riskAlignment) || 0,
-        portfolioFit: parseFloat(stock.portfolioFit) || 0,
+        personalizationScore: stock.personalizationScore ? parseFloat(stock.personalizationScore) : 0,
+        sectorDiversification: stock.sectorDiversification ? parseFloat(stock.sectorDiversification) : 0,
+        riskAlignment: stock.riskAlignment ? parseFloat(stock.riskAlignment) : 0,
+        portfolioFit: stock.portfolioFit ? parseFloat(stock.portfolioFit) : 0,
         userRiskTolerance: stock.userRiskTolerance || 'medium',
         userTimeHorizon: stock.userTimeHorizon || 'medium',
         userExperienceLevel: stock.userExperienceLevel || 'beginner',
@@ -402,7 +442,7 @@ export default function StockComparison_Enhanced({ navigation, user }) {
             sector: otherStock.sector || 'Unknown',
             industry: otherStock.industry || 'Unknown',
             marketCap: otherStock.marketCap || 'N/A',
-            confidence: parseFloat(otherStock.confidence) || 0,
+            confidence: otherStock.confidence ? parseFloat(otherStock.confidence) : 0,
             riskLevel: otherStock.riskLevel || 'medium',
             reason: otherStock.reason || 'AI recommendation'
           }
@@ -426,7 +466,21 @@ export default function StockComparison_Enhanced({ navigation, user }) {
             addedDate: new Date().toISOString(),
             stockData: sanitizedStock,
             // Save complete enhanced stock data for details modal
-            enhancedStockData: sanitizedEnhancedData
+            enhancedStockData: sanitizedEnhancedData,
+            // Also save LLM fields at top level for StockDetailsModal
+            investmentThesis: stock.investmentThesis || 'Analysis not available',
+            technicalAnalysis: stock.technicalAnalysis || 'Technical analysis not available',
+            keyBenefits: Array.isArray(stock.keyBenefits) ? stock.keyBenefits.filter(b => b && typeof b === 'string') : 
+                         typeof stock.keyBenefits === 'string' ? [stock.keyBenefits] : ['Benefits analysis available'],
+            keyRisks: Array.isArray(stock.keyRisks) ? stock.keyRisks.filter(r => r && typeof r === 'string') : 
+                      typeof stock.keyRisks === 'string' ? [stock.keyRisks] : ['Risk analysis available'],
+            personalizationScore: stock.personalizationScore ? parseFloat(stock.personalizationScore) : 0,
+            confidence: stock.confidence ? parseFloat(stock.confidence) : 0,
+            riskAlignment: stock.riskAlignment ? parseFloat(stock.riskAlignment) : 0,
+            sectorDiversification: stock.sectorDiversification ? parseFloat(stock.sectorDiversification) : 0,
+            portfolioFit: stock.portfolioFit ? parseFloat(stock.portfolioFit) : 0,
+            riskLevel: stock.riskLevel || 'medium',
+            reason: stock.reason || 'AI recommendation'
           });
         }
       }
@@ -462,7 +516,7 @@ export default function StockComparison_Enhanced({ navigation, user }) {
       console.log('All stock pairs completed, clearing stocks');
       setStocks([]);
       setCurrentPairIndex(0);
-      setError('You\'ve completed all stock comparisons! Generate new picks when you\'re ready for more recommendations.');
+      setError('Excellent! You\'ve reviewed all your stock recommendations. Ready for more picks when you are.');
     }
   };
 
@@ -481,6 +535,25 @@ export default function StockComparison_Enhanced({ navigation, user }) {
   useEffect(() => {
     loadStocks();
   }, [loadStocks]);
+
+  // Handle auto-generation from risk quiz and risk profile changes
+  useEffect(() => {
+    const unsubscribe = navigation?.addListener?.('focus', () => {
+      const params = navigation?.getState()?.routes?.find(route => route.name === 'StockComparison')?.params;
+      if (params?.autoGenerate && stocks.length === 0) {
+        generateNewStocks();
+      }
+      
+      // Check if risk profile was reset and clear stocks if needed
+      if (params?.riskProfileReset) {
+        setStocks([]);
+        setCurrentPairIndex(0);
+        setError(null);
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation, stocks.length]);
 
   // Price update interval
   useEffect(() => {
@@ -518,6 +591,16 @@ export default function StockComparison_Enhanced({ navigation, user }) {
 
   if (loading) {
     return <EnhancedLoadingScreen message="Loading Stock Comparisons..." />;
+  }
+
+  if (generating) {
+    return (
+      <StockGenerationLoadingScreen 
+        progress={generationProgress}
+        status={generationStatus}
+        onComplete={() => setGenerating(false)}
+      />
+    );
   }
 
   const formatCurrency = (amount) => {
@@ -628,22 +711,20 @@ export default function StockComparison_Enhanced({ navigation, user }) {
         </View>
 
         {/* Financial Metrics Row */}
-        {(stock.peRatio && stock.peRatio !== 'N/A') || (stock.dividendYield && stock.dividendYield !== 'N/A') ? (
-          <View style={styles.metricsRow}>
-            {stock.peRatio && stock.peRatio !== 'N/A' && (
-              <View style={styles.metric}>
-                <Text style={styles.metricLabel}>P/E Ratio</Text>
-                <Text style={styles.metricValue} numberOfLines={1}>{stock.peRatio}</Text>
-              </View>
-            )}
-            {stock.dividendYield && stock.dividendYield !== 'N/A' && (
-              <View style={styles.metric}>
-                <Text style={styles.metricLabel}>Dividend Yield</Text>
-                <Text style={styles.metricValue} numberOfLines={1}>{stock.dividendYield}</Text>
-              </View>
-            )}
+        <View style={styles.metricsRow}>
+          <View style={styles.metric}>
+            <Text style={styles.metricLabel}>P/E Ratio</Text>
+            <Text style={styles.metricValue} numberOfLines={1}>
+              {stock.peRatio && stock.peRatio !== 'N/A' ? stock.peRatio : 'N/A'}
+            </Text>
           </View>
-        ) : null}
+          <View style={styles.metric}>
+            <Text style={styles.metricLabel}>Dividend Yield</Text>
+            <Text style={styles.metricValue} numberOfLines={1}>
+              {stock.dividendYield && stock.dividendYield !== 'N/A' ? stock.dividendYield : 'N/A'}
+            </Text>
+          </View>
+        </View>
 
         {/* Risk & Confidence */}
         {(stock.riskLevel || stock.confidence !== undefined) && (
@@ -728,21 +809,32 @@ export default function StockComparison_Enhanced({ navigation, user }) {
               Choose your preferred stock from each pair
             </Text>
           </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.refreshButton}
+              onPress={refreshPrices}
+              disabled={priceUpdating}
+            >
+              <Text style={styles.refreshButtonText}>
+                {priceUpdating ? '↻' : '↻'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Progress Indicator */}
         {stocks.length > 0 && (
           <View style={styles.progressSection}>
-            <View style={styles.progressBar}>
+                        <View style={styles.progressBar}>
               <View 
                 style={[
-                  styles.progressFill,
-                  { width: `${((currentPairIndex + 2) / stocks.length) * 100}%` }
+                  styles.progressFill, 
+                  { width: `${((Math.floor(currentPairIndex / 2) + 1) / Math.ceil(stocks.length / 2)) * 100}%` }
                 ]} 
               />
             </View>
             <Text style={styles.progressText}>
-              {currentPairIndex + 2} of {stocks.length} stocks
+              {Math.floor(currentPairIndex / 2) + 1} of {Math.ceil(stocks.length / 2)} pairs
             </Text>
           </View>
         )}
@@ -781,46 +873,60 @@ export default function StockComparison_Enhanced({ navigation, user }) {
               You've reviewed all available stock recommendations.{'\n'}
               Generate new picks to continue discovering stocks!
             </Text>
-            <TouchableOpacity 
-              style={styles.generateButton}
-              onPress={generateNewStocks}
-              disabled={generating}
-            >
-              <Text style={styles.generateButtonText}>
-                {generating ? 'Generating...' : 'Generate New Picks'}
-              </Text>
-            </TouchableOpacity>
+                          <TouchableOpacity 
+                style={styles.generateButton}
+                onPress={generateNewStocks}
+                disabled={generating}
+              >
+                <Text style={styles.generateButtonText}>
+                  {generating ? 'Creating...' : 'Generate New Picks'}
+                </Text>
+              </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.emptyContainer}>
             {error ? (
               <>
-                <Text style={styles.errorTitle}>⚠️ Unable to Fetch Recommendations</Text>
-                <Text style={styles.errorText}>{error}</Text>
-                <TouchableOpacity 
-                  style={styles.retryButton}
-                  onPress={generateNewStocks}
-                  disabled={generating}
-                >
-                  <Text style={styles.retryButtonText}>
-                    {generating ? 'Trying Again...' : 'Try Again'}
+                <View style={styles.welcomeContainer}>
+                  <Text style={styles.welcomeIcon}>●</Text>
+                  <Text style={styles.welcomeTitle}>Ready for More Recommendations</Text>
+                  <Text style={styles.welcomeText}>
+                    {error.includes('API') 
+                      ? 'We\'re preparing fresh recommendations for you. This usually takes just a moment.' 
+                      : 'We\'re getting your personalized recommendations ready.'
+                    }
                   </Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <Text style={styles.emptyTitle}>No stocks to compare</Text>
-                <Text style={styles.emptyText}>
-                  {generating ? 'Generating personalized stock recommendations...' : 'Generate new stock recommendations to start comparing!'}
-                </Text>
-                {!generating && (
                   <TouchableOpacity 
                     style={styles.generateButton}
                     onPress={generateNewStocks}
+                    disabled={generating}
                   >
-                    <Text style={styles.generateButtonText}>Generate Recommendations</Text>
+                    <Text style={styles.generateButtonText}>
+                      {generating ? 'Creating...' : 'Get New Recommendations'}
+                    </Text>
                   </TouchableOpacity>
-                )}
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.welcomeContainer}>
+                  <Text style={styles.welcomeIcon}>●</Text>
+                  <Text style={styles.welcomeTitle}>Ready to Discover Great Stocks?</Text>
+                  <Text style={styles.welcomeText}>
+                    {generating 
+                      ? 'Creating personalized recommendations just for you...' 
+                      : 'Get AI-powered stock recommendations tailored to your investment style!'
+                    }
+                  </Text>
+                  {!generating && (
+                    <TouchableOpacity 
+                      style={styles.generateButton}
+                      onPress={generateNewStocks}
+                    >
+                      <Text style={styles.generateButtonText}>Discover Stocks</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </>
             )}
           </View>
@@ -855,14 +961,14 @@ export default function StockComparison_Enhanced({ navigation, user }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#0f0f23',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: SPACING.lg,
-    paddingBottom: 120, // Extra padding for bottom navigation and safety
-    flexGrow: 1,
+    paddingBottom: 120,
   },
   header: {
     flexDirection: 'row',
@@ -881,6 +987,10 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     ...TYPOGRAPHY.body,
     color: COLORS.text.secondary,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   refreshButton: {
     backgroundColor: COLORS.primary,
@@ -960,29 +1070,26 @@ const styles = StyleSheet.create({
     marginRight: SPACING.md,
   },
   stockSymbol: {
+    ...TYPOGRAPHY.caption,
+    color: '#FFFFFF', // Explicit white color for visibility
+    fontWeight: '600',
+    opacity: 0.8,
+  },
+  stockName: {
     ...TYPOGRAPHY.h3,
-    color: COLORS.text.primary,
+    color: '#FFFFFF', // Explicit white color for visibility
     fontWeight: '700',
     marginBottom: SPACING.xs,
   },
-  stockName: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.text.secondary,
-    flexWrap: 'wrap',
-  },
-  priceInfo: {
-    alignItems: 'flex-end',
-    flexShrink: 0,
-  },
   stockPrice: {
-    ...TYPOGRAPHY.h3,
-    color: COLORS.text.primary,
+    ...TYPOGRAPHY.h2,
+    color: '#FFFFFF', // Explicit white color for visibility
     fontWeight: '700',
     marginBottom: SPACING.xs,
   },
   stockChange: {
-    ...TYPOGRAPHY.body,
-    fontWeight: '500',
+    ...TYPOGRAPHY.caption,
+    fontWeight: '600',
   },
   metricsRow: {
     flexDirection: 'row',
@@ -999,12 +1106,12 @@ const styles = StyleSheet.create({
   },
   metricLabel: {
     ...TYPOGRAPHY.small,
-    color: COLORS.text.secondary,
+    color: '#CCCCCC', // Light grey for labels
     marginBottom: SPACING.xs,
   },
   metricValue: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.text.primary,
+    color: '#FFFFFF', // Explicit white color for visibility
     fontWeight: '600',
     textAlign: 'center',
   },
@@ -1091,13 +1198,14 @@ const styles = StyleSheet.create({
   riskConfidenceValue: {
     ...TYPOGRAPHY.body,
     fontWeight: '600',
+    color: '#FFFFFF', // Explicit white color for visibility
   },
   personalizationSection: {
     marginBottom: SPACING.md,
   },
   personalizationLabel: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.text.secondary,
+    color: '#CCCCCC', // Light grey for labels
     fontWeight: '600',
     marginBottom: SPACING.xs,
   },
@@ -1216,6 +1324,31 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.text.primary,
     fontWeight: '700',
+  },
+  welcomeContainer: {
+    alignItems: 'center',
+    padding: SPACING.xl,
+    justifyContent: 'center',
+    minHeight: 300,
+  },
+  welcomeIcon: {
+    fontSize: 64,
+    marginBottom: SPACING.md,
+  },
+  welcomeTitle: {
+    ...TYPOGRAPHY.h2,
+    color: COLORS.text.primary,
+    textAlign: 'center',
+    marginBottom: SPACING.md,
+    fontWeight: '600',
+  },
+  welcomeText: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+    marginBottom: SPACING.xl,
+    lineHeight: 24,
+    paddingHorizontal: SPACING.md,
   },
   emptyContainer: {
     alignItems: 'center',

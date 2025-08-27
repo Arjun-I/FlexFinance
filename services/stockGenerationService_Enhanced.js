@@ -2,7 +2,7 @@
 import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, updateDoc, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import groqService from './groqService';
-import { getStockQuote, getCompanyProfile, getCompanyFinancialsEnhanced } from './finnhubService';
+import { getStockQuote, getMultipleQuotes, getCompanyProfile, getCompanyFinancialsEnhanced } from './finnhubService';
 
 class StockGenerationService_Enhanced {
   constructor() {
@@ -12,14 +12,12 @@ class StockGenerationService_Enhanced {
     this.userProfile = null;
   }
 
-  // Load comprehensive user context
-  async loadUserContext() {
+  // Load enhanced user context including profile and risk data
+  async loadEnhancedUserContext() {
     try {
-      if (!this.userId) {
-        console.error('No user ID provided');
-        return false;
-      }
-
+      console.log('Loading enhanced user context for user:', this.userId);
+      
+      // Get user document
       const userDoc = await getDoc(doc(db, 'users', this.userId));
       if (!userDoc.exists()) {
         console.error('User document not found');
@@ -37,7 +35,7 @@ class StockGenerationService_Enhanced {
         preferredSectors: userData.preferredSectors || [],
         riskTolerance: userData.riskTolerance || 'medium',
         timeHorizon: userData.timeHorizon || 'medium',
-        experienceLevel: userData.experienceLevel || 'beginner'
+        experienceLevel: userData.experienceLevel || 'intermediate'
       };
 
       // Load risk profile
@@ -80,6 +78,8 @@ class StockGenerationService_Enhanced {
   // Get user's investment history and preferences
   async getUserInvestmentProfile() {
     try {
+      console.log('Getting user investment profile for user:', this.userId);
+      
       const [portfolioSnapshot, choicesSnapshot, watchlistSnapshot] = await Promise.all([
         getDocs(collection(db, 'users', this.userId, 'portfolio')),
         getDocs(collection(db, 'users', this.userId, 'userChoices')),
@@ -122,7 +122,7 @@ class StockGenerationService_Enhanced {
         });
       });
 
-      return {
+      const result = {
         portfolio,
         likedStocks,
         rejectedStocks,
@@ -131,9 +131,29 @@ class StockGenerationService_Enhanced {
         portfolioSectors: [...new Set(portfolio.map(h => h.sector))],
         portfolioIndustries: [...new Set(portfolio.map(h => h.industry))]
       };
+
+      console.log('Investment profile result:', {
+        portfolioCount: portfolio.length,
+        likedStocksCount: likedStocks.length,
+        rejectedStocksCount: rejectedStocks.length,
+        watchlistCount: watchlist.length,
+        totalInvested: result.totalInvested,
+        portfolioSectors: result.portfolioSectors
+      });
+
+      return result;
     } catch (error) {
       console.error('Error getting user investment profile:', error);
-      return null;
+      // Return a default profile instead of null
+      return {
+        portfolio: [],
+        likedStocks: [],
+        rejectedStocks: [],
+        watchlist: [],
+        totalInvested: 0,
+        portfolioSectors: [],
+        portfolioIndustries: []
+      };
     }
   }
 
@@ -145,6 +165,21 @@ class StockGenerationService_Enhanced {
       
       const investmentProfile = await this.getUserInvestmentProfile();
       console.log('Investment profile:', investmentProfile);
+      
+      // Handle case where investment profile is null
+      if (!investmentProfile) {
+        console.warn('Investment profile is null, using default values');
+        return {
+          sectorDiversification: 0.5,
+          riskAlignment: 0.5,
+          portfolioFit: 0.5,
+          personalizationScore: 0.5,
+          investmentThesis: `Based on your ${this.userProfile?.riskTolerance || 'medium'} risk tolerance, ${stock.symbol} could be a good addition to your portfolio.`,
+          keyBenefits: ['Growth potential', 'Market opportunity'],
+          keyRisks: ['Market volatility'],
+          investmentProfile: null
+        };
+      }
       
       // Calculate personalized metrics
       const sectorDiversification = this.calculateSectorDiversification(stock.sector, investmentProfile.portfolioSectors);
@@ -159,7 +194,7 @@ class StockGenerationService_Enhanced {
       const personalizedBenefits = await this.generatePersonalizedBenefits(stock, investmentProfile, quoteData, companyData);
       const personalizedRisks = await this.generatePersonalizedRisks(stock, investmentProfile, quoteData, companyData);
 
-      return {
+      const result = {
         sectorDiversification,
         riskAlignment,
         portfolioFit,
@@ -169,6 +204,15 @@ class StockGenerationService_Enhanced {
         keyRisks: personalizedRisks,
         investmentProfile
       };
+
+      console.log(`Personalized analysis result for ${stock.symbol}:`, {
+        sectorDiversification,
+        riskAlignment,
+        portfolioFit,
+        personalizationScore
+      });
+
+      return result;
     } catch (error) {
       console.error('Error generating personalized analysis:', error);
       return {
@@ -404,7 +448,9 @@ class StockGenerationService_Enhanced {
         • Experience Level: ${this.userProfile.experienceLevel} investor
         • Current Holdings: ${investmentProfile.portfolio.length} positions across ${investmentProfile.portfolioSectors.length} sectors
         • Existing Sectors: ${investmentProfile.portfolioSectors.join(', ') || 'No current holdings'}
-        • Portfolio Size: $${investmentProfile.totalInvested.toFixed(0)} total investment
+        • Total Invested: $${investmentProfile.totalInvested.toFixed(0)}
+        • Available Capital: $${this.userProfile.cashBalance.toFixed(0)}
+        • Portfolio Allocation: ${investmentProfile.portfolio.length > 0 ? (investmentProfile.totalInvested / this.userProfile.cashBalance * 100).toFixed(1) : '0'}% of capital deployed
         
         STOCK FUNDAMENTALS:
         • Trading Price: $${quoteData.price.toFixed(2)}
@@ -413,19 +459,25 @@ class StockGenerationService_Enhanced {
         • Industry Focus: ${stock.industry}
         • Current Valuation: ${quoteData.changePercent >= 0 ? 'Recent upward momentum' : 'Recent price consolidation'}
         
+        PORTFOLIO CONTEXT:
+        • Current Portfolio Value: $${investmentProfile.totalInvested.toFixed(0)}
+        • Remaining Capital: $${this.userProfile.cashBalance.toFixed(0)}
+        • Sector Exposure: ${investmentProfile.portfolioSectors.length > 0 ? investmentProfile.portfolioSectors.join(', ') : 'None'}
+        • Position Sizing: Consider that ${quoteData.price.toFixed(2)} per share means $${(100 * quoteData.price).toFixed(0)} for 100 shares
+        
         THESIS REQUIREMENTS:
         Write exactly 3-4 sentences that address:
-        1. Specific value proposition aligned with user's ${this.userProfile.riskTolerance} risk profile
-        2. Portfolio impact and diversification considerations
-        3. How this investment fits their ${this.userProfile.timeHorizon} term strategy
-        4. Concrete rationale for position sizing within their ${investmentProfile.totalInvested > 0 ? '$' + investmentProfile.totalInvested.toFixed(0) : 'developing'} portfolio
+        1. Specific value proposition aligned with user's ${this.userProfile.riskTolerance} risk profile and $${this.userProfile.cashBalance.toFixed(0)} available capital
+        2. Portfolio impact and diversification considerations given current $${investmentProfile.totalInvested.toFixed(0)} invested across ${investmentProfile.portfolioSectors.length} sectors
+        3. How this investment fits their ${this.userProfile.timeHorizon} term strategy with $${this.userProfile.cashBalance.toFixed(0)} remaining capital
+        4. Concrete rationale for position sizing within their current portfolio framework
         
         PROFESSIONAL STANDARDS:
         • Use formal institutional language - NO first person references ("I", "we", "our")
         • Write as senior investment analyst for sophisticated client
         • Include specific financial reasoning and portfolio theory
+        • Reference actual capital amounts and portfolio metrics
         • Vary sentence structure and vocabulary for uniqueness
-        • Reference concrete metrics and strategic considerations
         • Ensure each thesis is distinctly different in approach and focus
         • NO prefixes, headers, or formatting artifacts
       `;
@@ -650,15 +702,41 @@ class StockGenerationService_Enhanced {
   // Enhanced stock generation with personalized analysis and smart API management
   async generatePersonalizedStocks(user, maxStocks = 10) {
     try {
-      this.userId = user.uid;
-      console.log('🤖 Generating enhanced personalized stocks with smart API management...');
+      console.log('🎯 Generating personalized stock recommendations...');
       
-      // Load user context
-      const contextLoaded = await this.loadUserContext();
+      // Set user ID and load enhanced user context
+      this.userId = user.uid;
+      const contextLoaded = await this.loadEnhancedUserContext();
+      
       if (!contextLoaded) {
-        throw new Error('Failed to load user context');
+        console.warn('Failed to load user context, using default values');
+        // Initialize with default values
+        this.userProfile = {
+          email: user.email,
+          cashBalance: 10000,
+          investmentGoals: [],
+          preferredSectors: [],
+          riskTolerance: 'medium',
+          timeHorizon: 'medium',
+          experienceLevel: 'intermediate'
+        };
+        this.riskProfile = {
+          riskProfile: {
+            volatility: 3,
+            timeHorizon: 3,
+            liquidity: 3,
+            knowledge: 2,
+            ethics: 3
+          },
+          totalScore: 14,
+          riskLevel: 'moderate',
+          isDefault: true
+        };
       }
-
+      
+      console.log('User profile loaded:', this.userProfile);
+      console.log('Risk profile loaded:', this.riskProfile);
+      
       // Get user investment profile
       const investmentProfile = await this.getUserInvestmentProfile();
       
@@ -703,39 +781,20 @@ class StockGenerationService_Enhanced {
       
       console.log(`Processing ${symbolsToProcess.length} symbols with smart caching...`);
       
-      // Batch 1: Get all quotes first (most critical data)
-      console.log('📊 Batch 1: Fetching stock quotes...');
-      const quotes = [];
-      const failedSymbols = [];
+      // Fetch quotes for all symbols
+      console.log(`📊 Fetching quotes for ${symbolsToProcess.length} symbols...`);
+      const quotes = await getMultipleQuotes(symbolsToProcess);
       
-      // Process quotes sequentially to avoid overwhelming the API
-      for (const symbol of symbolsToProcess) {
-        try {
-                console.log(`Fetching quote for ${symbol}...`);
-       const quote = await getStockQuote(symbol);
-       if (quote && quote.price > 0) {
-         quotes.push(quote);
-         console.log(`✅ Quote for ${symbol}: $${quote.price}`);
-       } else {
-         console.warn(`Invalid quote data for ${symbol}:`, quote);
-         console.warn(`Skipping ${symbol} - no valid price data available`);
-         failedSymbols.push(symbol);
-       }
-        } catch (error) {
-          console.warn(`Failed to get quote for ${symbol}:`, error.message);
-          failedSymbols.push(symbol);
-          
-          // If we hit rate limits, wait a bit before continuing
-          if (error.message.includes('API_LIMIT_REACHED')) {
-            console.log('Rate limit hit, waiting 2 seconds...');
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-        }
+      if (quotes.length === 0) {
+        console.warn('No valid quotes received from API');
+        throw new Error('No valid stock data available. Please try again in a few minutes.');
       }
       
-      console.log(`✅ Successfully fetched ${quotes.length}/${symbolsToProcess.length} quotes`);
-      if (failedSymbols.length > 0) {
-        console.log(`❌ Failed symbols: ${failedSymbols.join(', ')}`);
+      console.log(`✅ Successfully fetched ${quotes.length} quotes`);
+      
+      // If we got fewer quotes than expected, adjust our expectations
+      if (quotes.length < symbolsToProcess.length) {
+        console.log(`⚠️ Got ${quotes.length}/${symbolsToProcess.length} valid quotes - some symbols may be invalid or delisted`);
       }
       
       // Batch 2: Get company profiles (less critical, can use fallbacks)
@@ -802,13 +861,35 @@ class StockGenerationService_Enhanced {
           
           if (!rec) continue;
           
+          // CRITICAL: Validate price data first before any processing
+          if (!quote || !quote.price || quote.price <= 0 || isNaN(quote.price)) {
+            console.warn(`Skipping ${rec.symbol} - invalid or missing price data: ${quote?.price}`);
+            continue;
+          }
+          
+          // Validate that we have basic quote data
+          if (!quote.symbol || !quote.changePercent) {
+            console.warn(`Skipping ${rec.symbol} - missing essential quote data`);
+            continue;
+          }
+          
+          console.log(`✅ Processing ${rec.symbol} with valid price: $${quote.price}`);
+          
           // Generate LLM financial metrics if API data is not available
           let enhancedFinancialData = financial;
+          console.log(`Financial data for ${quote.symbol}:`, {
+            peRatio: financial.peRatio,
+            dividendYield: financial.dividendYield,
+            marketCap: financial.marketCap,
+            source: financial.source
+          });
+          
           if (financial.peRatio === 'N/A' && financial.dividendYield === 'N/A' && financial.marketCap === 'N/A') {
             if (profile.name && profile.sector) {
               try {
                 console.log(`Generating LLM financial metrics for ${quote.symbol}`);
                 enhancedFinancialData = await this.generateFinancialMetrics(quote.symbol, profile.name, profile.sector);
+                console.log(`LLM generated financial data for ${quote.symbol}:`, enhancedFinancialData);
               } catch (error) {
                 console.warn(`LLM financial generation failed for ${quote.symbol}:`, error.message);
                 // Keep the fallback data
@@ -816,14 +897,16 @@ class StockGenerationService_Enhanced {
             }
           }
 
-          // Validate required data FIRST before generating any analysis
-          if (!quote.price || quote.price <= 0) {
-            console.warn(`Skipping ${rec.symbol} - invalid price: ${quote.price}`);
+          // Validate market cap data
+          if (!enhancedFinancialData.marketCap || enhancedFinancialData.marketCap === 'N/A' || enhancedFinancialData.marketCap === 0) {
+            console.warn(`Skipping ${rec.symbol} - missing or invalid market cap data: ${enhancedFinancialData.marketCap}`);
             continue;
           }
-          
-          if (!enhancedFinancialData.marketCap || enhancedFinancialData.marketCap === 'N/A') {
-            console.warn(`Skipping ${rec.symbol} - missing market cap data`);
+
+          // Validate that market cap is a reasonable number (not 0 or negative)
+          const marketCapValue = parseFloat(enhancedFinancialData.marketCap);
+          if (isNaN(marketCapValue) || marketCapValue <= 0) {
+            console.warn(`Skipping ${rec.symbol} - invalid market cap value: ${enhancedFinancialData.marketCap}`);
             continue;
           }
 
@@ -835,6 +918,12 @@ class StockGenerationService_Enhanced {
           ]);
           
           console.log(`Technical analysis generated for ${rec.symbol}:`, technicalAnalysis?.substring(0, 100) + '...');
+          console.log(`Personalized analysis generated for ${rec.symbol}:`, {
+            sectorDiversification: personalizedAnalysis?.sectorDiversification,
+            riskAlignment: personalizedAnalysis?.riskAlignment,
+            portfolioFit: personalizedAnalysis?.portfolioFit,
+            personalizationScore: personalizedAnalysis?.personalizationScore
+          });
 
           const enhancedStock = {
             symbol: rec.symbol,
@@ -845,7 +934,8 @@ class StockGenerationService_Enhanced {
             changePercent: quote.changePercent,
             sector: rec.sector || profile.sector,
             industry: rec.industry || profile.industry,
-            marketCap: enhancedFinancialData.marketCap || profile.marketCap || 'N/A',
+            marketCap: enhancedFinancialData.marketCapDisplay || (enhancedFinancialData.marketCap ? this.formatMarketCap(parseFloat(enhancedFinancialData.marketCap)) : 'N/A'), // Use display format for UI
+            marketCapRaw: enhancedFinancialData.marketCap || profile.marketCap || 0, // Keep raw millions value
             peRatio: enhancedFinancialData.peRatio || 'N/A',
             dividendYield: enhancedFinancialData.dividendYield || 'N/A',
             riskLevel: rec.riskLevel || 'medium',
@@ -855,29 +945,29 @@ class StockGenerationService_Enhanced {
             generatedAt: new Date().toISOString(),
             lastUpdated: new Date().toISOString(),
             
-            // Enhanced personalized fields
-            personalizationScore: personalizedAnalysis.personalizationScore,
-            sectorDiversification: personalizedAnalysis.sectorDiversification,
-            riskAlignment: personalizedAnalysis.riskAlignment,
-            portfolioFit: personalizedAnalysis.portfolioFit,
+            // Enhanced personalized fields - ensure no null values
+            personalizationScore: personalizedAnalysis?.personalizationScore || 0.5,
+            sectorDiversification: personalizedAnalysis?.sectorDiversification || 0.5,
+            riskAlignment: personalizedAnalysis?.riskAlignment || 0.5,
+            portfolioFit: personalizedAnalysis?.portfolioFit || 0.5,
             
-            // Personalized content
-            investmentThesis: personalizedAnalysis.investmentThesis,
-            keyBenefits: personalizedAnalysis.keyBenefits,
-            keyRisks: personalizedAnalysis.keyRisks,
-            technicalAnalysis: technicalAnalysis,
+            // Personalized content - ensure no null values
+            investmentThesis: personalizedAnalysis?.investmentThesis || `Based on your ${this.userProfile?.riskTolerance || 'medium'} risk tolerance, ${rec.symbol} could be a good addition to your portfolio.`,
+            keyBenefits: personalizedAnalysis?.keyBenefits || ['Growth potential', 'Market opportunity'],
+            keyRisks: personalizedAnalysis?.keyRisks || ['Market volatility'],
+            technicalAnalysis: technicalAnalysis || `${rec.symbol} technical analysis will be available once price data is loaded.`,
             
             // User context
-            userRiskTolerance: this.userProfile.riskTolerance,
-            userTimeHorizon: this.userProfile.timeHorizon,
-            userExperienceLevel: this.userProfile.experienceLevel,
+            userRiskTolerance: this.userProfile?.riskTolerance || 'medium',
+            userTimeHorizon: this.userProfile?.timeHorizon || 'medium',
+            userExperienceLevel: this.userProfile?.experienceLevel || 'intermediate',
             
             generatedAt: new Date().toISOString(),
             source: 'Enhanced LLM + Personalized Analysis'
           };
 
           enhancedStocks.push(enhancedStock);
-          console.log(`✅ Processed ${quote.symbol} successfully`);
+          console.log(`✅ Processed ${quote.symbol} successfully with market cap: ${enhancedStock.marketCap}, P/E: ${enhancedStock.peRatio}, Dividend: ${enhancedStock.dividendYield}`);
           
         } catch (error) {
           console.warn(`Failed to process stock ${quotes[i]?.symbol}:`, error.message);
@@ -1033,150 +1123,240 @@ class StockGenerationService_Enhanced {
     }
   }
 
-  // Generate financial metrics using LLM when API data is unavailable
+  // Generate financial metrics with LLM fallback
   async generateFinancialMetrics(symbol, companyName, sector) {
     try {
+      console.log(`Generating financial metrics for ${symbol} (${companyName})`);
+      
+      // Determine base market cap based on company characteristics (in millions)
+      const baseMarketCapMillions = this.determineBaseMarketCap(companyName, sector);
+      console.log(`Determined base market cap for ${symbol}: ${baseMarketCapMillions} millions`);
+      
+      // Convert to display format
+      const baseMarketCapDisplay = this.formatMarketCap(baseMarketCapMillions);
+      console.log(`Formatted market cap for ${symbol}: ${baseMarketCapDisplay}`);
+      
       const prompt = `
-        Generate realistic financial metrics for ${symbol} (${companyName}) in the ${sector} sector.
+        Generate financial metrics for ${companyName} (${symbol}) in the ${sector} sector.
         
+        REQUIREMENTS:
+        1. Market Cap: MUST be exactly ${baseMarketCapMillions} millions (${baseMarketCapDisplay})
+        2. P/E Ratio: Provide a realistic P/E ratio between 5-50, or "N/A" if not applicable
+        3. Dividend Yield: Provide a realistic dividend yield between 0.1-8.0%, or "N/A" if not applicable
         
-        IMPORTANT GUIDELINES:
-        - P/E ratio: 10-50 for most companies, 50-100 for high-growth tech, 5-15 for value stocks
-        - Dividend yield: Use "0.0%" for companies that don't pay dividends (common in tech, biotech, growth stocks)
-        - Use "N/A" only if dividend information is completely unavailable/unknown
-        - Only use dividend yields > 0% for mature, established companies that actually pay dividends (utilities, REITs, some banks)
-        - Market cap: VARY WIDELY based on company size and sector - don't use the same value for all companies
-        
-        Market Cap Guidelines by Company Type:
-        - Mega-cap companies (Apple, Microsoft, Google): 1T-3T
-        - Large-cap companies (established leaders): 50B-500B
-        - Mid-cap companies (growing companies): 5B-50B
-        - Small-cap companies (emerging companies): 500M-5B
-        - Micro-cap companies (startups): 50M-500M
-        
-        Sector-specific Market Cap Examples:
-        - Technology: 50B-3T (varies widely from startups to giants)
-        - Healthcare/Biotech: 500M-500B (many small biotechs, some large pharma)
-        - Financial: 10B-500B (banks and financial services)
-        - Consumer: 5B-200B (retail and consumer goods)
-        - Energy: 10B-300B (oil and energy companies)
-        - Real Estate: 5B-100B (REITs and real estate companies)
-        
-        Sector-specific guidelines:
-        - Technology: P/E 20-80, Dividend "0.0%" (most tech companies don't pay dividends), Market Cap varies
-        - Healthcare/Biotech: P/E 15-40, Dividend "0.0%" (most don't pay dividends), Market Cap varies
-        - Financial: P/E 10-25, Dividend 1-5% (banks pay dividends), Market Cap varies
-        - Consumer: P/E 15-30, Dividend "0.0%" or 1-3% (many don't pay dividends), Market Cap varies
-        - Energy: P/E 8-20, Dividend 2-8% (oil companies often pay dividends), Market Cap varies
-        - Real Estate: P/E 10-25, Dividend 3-8% (REITs required to pay dividends), Market Cap varies
-        
-        CRITICAL RULES:
-        - Return ONLY the JSON object, no other text
-        - VARY the market cap values - don't use "150B" for every company
-        - Use "0.0%" for dividend yield if the company type typically doesn't pay dividends
-        - Be realistic - many modern companies (especially tech/growth) don't pay dividends, so "0.0%" is common
-        - Never include price data
-        - Ensure all fields are strings
-        - Make each company's metrics unique and realistic
-        
-        Expected JSON format:
+        FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
         {
-          "peRatio": "25.4",
-          "dividendYield": "0.0%",
-          "marketCap": "45.2B"
+          "marketCap": ${baseMarketCapMillions},
+          "peRatio": "15.2",
+          "dividendYield": "2.1%"
         }
         
-        CRITICAL REQUIREMENTS:
-        - Market cap is MANDATORY - never return "N/A" for market cap
-        - Market cap must be realistic for the company size and sector
-        - Use specific values like "2.1B", "850M", "45.7B" - avoid generic numbers
-        - Research the actual company if needed to provide realistic metrics
-        
-        IMPORTANT: 
+        IMPORTANT:
+        - Market cap MUST be exactly ${baseMarketCapMillions} (in millions)
+        - Use realistic values for P/E and dividend based on the sector
+        - If a company doesn't pay dividends, use "N/A" for dividend yield
+        - If P/E is not applicable, use "N/A"
         - Return ONLY the JSON object, no other text
-        - Use realistic values based on the sector
-        - Never include price data
-        - Ensure all fields are strings
-        - For dividend yield, use "0.0%" for non-dividend paying companies, "N/A" only if truly unknown
       `;
-      
-      const response = await groqService.generateText(prompt, 500);
-      
-      // Parse and clean the response
-      let metrics;
-      try {
-        // Clean the response first
-        let cleanedResponse = response.trim();
-        
-        // Remove any markdown formatting
-        cleanedResponse = cleanedResponse.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-        
-        // Try to parse as JSON first
-        metrics = JSON.parse(cleanedResponse);
-      } catch (parseError) {
-        console.log('Initial JSON parse failed, trying to extract JSON:', parseError.message);
-        
-        // If JSON parsing fails, try to extract JSON from the response
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          try {
-            metrics = JSON.parse(jsonMatch[0]);
-          } catch (secondError) {
-            console.log('JSON extraction also failed:', secondError.message);
-            throw new Error('Could not parse LLM response as JSON');
-          }
-        } else {
-          throw new Error('Could not parse LLM response as JSON');
-        }
-      }
-      
-      // Validate that we have required fields
-      if (!metrics.marketCap || metrics.marketCap === 'N/A') {
-        throw new Error('LLM failed to generate valid market cap');
-      }
 
-      return {
-        symbol: symbol,
-        peRatio: metrics.peRatio || 'N/A',
-        dividendYield: metrics.dividendYield || '0.0%',
-        marketCap: metrics.marketCap,
-        source: 'LLM-generated'
-      };
+      try {
+        const response = await groqService.generateText(prompt);
+        console.log(`Raw LLM response for ${symbol}:`, response);
+        
+        // Parse the response
+        const cleanedResponse = this.cleanText(response);
+        const metrics = JSON.parse(cleanedResponse);
+        
+        console.log(`Parsed metrics for ${symbol}:`, metrics);
+        
+        // Validate and force the market cap
+        const result = {
+          marketCap: baseMarketCapMillions, // Store as millions for API compatibility
+          marketCapDisplay: baseMarketCapDisplay, // Store formatted version for display
+          peRatio: metrics.peRatio || 'N/A',
+          dividendYield: metrics.dividendYield || 'N/A',
+          source: 'LLM Generated'
+        };
+        
+        console.log(`Final financial metrics for ${symbol}:`, result);
+        return result;
+        
+      } catch (error) {
+        console.warn(`LLM financial generation failed for ${symbol}:`, error.message);
+        
+        // Fallback with forced market cap
+        return {
+          marketCap: baseMarketCapMillions, // Store as millions for API compatibility
+          marketCapDisplay: baseMarketCapDisplay, // Store formatted version for display
+          peRatio: 'N/A',
+          dividendYield: 'N/A',
+          source: 'Fallback'
+        };
+      }
     } catch (error) {
-      console.warn(`Failed to generate financial metrics for ${symbol}:`, error);
+      console.error(`Error generating financial metrics for ${symbol}:`, error);
+      return {
+        marketCap: 0,
+        marketCapDisplay: 'N/A',
+        peRatio: 'N/A',
+        dividendYield: 'N/A',
+        source: 'Error'
+      };
+    }
+  }
+
+  // Format market cap from millions to display format
+  formatMarketCap(millions) {
+    if (!millions || millions === 0) return 'N/A';
+    
+    if (millions >= 1000000) {
+      return `${(millions / 1000000).toFixed(1)}T`;
+    } else if (millions >= 1000) {
+      return `${(millions / 1000).toFixed(1)}B`;
+    } else {
+      return `${millions}M`;
+    }
+  }
+
+  // Determine realistic market cap based on company characteristics
+  determineBaseMarketCap(companyName, sector) {
+    const name = (companyName || '').toLowerCase();
+    const sectorLower = (sector || '').toLowerCase();
+    
+    // Check for mega-cap indicators in company name
+    if (name.includes('apple') || name.includes('microsoft') || name.includes('google') || 
+        name.includes('amazon') || name.includes('tesla') || name.includes('nvidia')) {
+      return 2100000; // 2.1T in millions
+    }
+    
+    // Check for large-cap indicators
+    if (name.includes('inc') || name.includes('corp') || name.includes('ltd') || 
+        name.includes('company') || name.includes('enterprises')) {
+      if (sectorLower.includes('tech')) return 45200; // 45.2B in millions
+      if (sectorLower.includes('health')) return 15700; // 15.7B in millions
+      if (sectorLower.includes('financial')) return 25100; // 25.1B in millions
+      if (sectorLower.includes('energy')) return 12300; // 12.3B in millions
+      if (sectorLower.includes('consumer')) return 22100; // 22.1B in millions
+      return 18500; // 18.5B in millions - Default for established companies
+    }
+    
+    // Check for mid-cap indicators
+    if (name.includes('systems') || name.includes('solutions') || name.includes('group')) {
+      if (sectorLower.includes('tech')) return 8300; // 8.3B in millions
+      if (sectorLower.includes('health')) return 4700; // 4.7B in millions
+      if (sectorLower.includes('financial')) return 6200; // 6.2B in millions
+      if (sectorLower.includes('energy')) return 5700; // 5.7B in millions
+      if (sectorLower.includes('consumer')) return 4200; // 4.2B in millions
+      return 5200; // 5.2B in millions - Default for mid-cap
+    }
+    
+    // Check for small-cap indicators
+    if (name.includes('bio') || name.includes('pharma') || name.includes('medical') || 
+        name.includes('startup') || name.includes('emerging')) {
+      if (sectorLower.includes('tech')) return 850; // 850M in millions
+      if (sectorLower.includes('health')) return 650; // 650M in millions
+      if (sectorLower.includes('financial')) return 1200; // 1.2B in millions
+      if (sectorLower.includes('energy')) return 1800; // 1.8B in millions
+      if (sectorLower.includes('consumer')) return 750; // 750M in millions
+      return 950; // 950M in millions - Default for small-cap
+    }
+    
+    // Sector-based defaults
+    switch (sectorLower) {
+      case 'technology':
+        return 12800; // 12.8B in millions
+      case 'healthcare':
+      case 'biotech':
+        return 3500; // 3.5B in millions
+      case 'financial':
+        return 15200; // 15.2B in millions
+      case 'energy':
+        return 8900; // 8.9B in millions
+      case 'real estate':
+        return 6100; // 6.1B in millions
+      case 'consumer':
+        return 8300; // 8.3B in millions
+      default:
+        return 5200; // 5.2B in millions
+    }
+  }
+
+  // Validate and fix market cap values
+  validateMarketCap(marketCap, sector, symbol) {
+    // Check if market cap is invalid or zero
+    if (!marketCap || 
+        marketCap === 'N/A' || 
+        marketCap === '0.0B' || 
+        marketCap === '0B' || 
+        marketCap === '0' ||
+        marketCap === '0.0' ||
+        marketCap === '0.00B' ||
+        marketCap === '0.00') {
       
-      // Generate a basic fallback market cap based on sector
-      let fallbackMarketCap = '5.2B'; // Default mid-cap
+      console.warn(`Invalid market cap detected for ${symbol}: "${marketCap}", generating realistic value`);
+      
+      // Generate realistic market cap based on sector
+      let realisticMarketCap = '5.2B'; // Default mid-cap
+      
       if (sector) {
         switch (sector.toLowerCase()) {
           case 'technology':
-            fallbackMarketCap = '12.8B';
+            realisticMarketCap = '12.8B';
             break;
           case 'healthcare':
           case 'biotech':
-            fallbackMarketCap = '3.5B';
+            realisticMarketCap = '3.5B';
             break;
           case 'financial':
-            fallbackMarketCap = '15.2B';
+            realisticMarketCap = '15.2B';
             break;
           case 'energy':
-            fallbackMarketCap = '8.9B';
+            realisticMarketCap = '8.9B';
             break;
           case 'real estate':
-            fallbackMarketCap = '6.1B';
+            realisticMarketCap = '6.1B';
+            break;
+          case 'consumer':
+          case 'consumer cyclical':
+          case 'consumer defensive':
+            realisticMarketCap = '8.3B';
+            break;
+          case 'industrials':
+            realisticMarketCap = '7.1B';
+            break;
+          case 'utilities':
+            realisticMarketCap = '4.2B';
             break;
           default:
-            fallbackMarketCap = '4.7B';
+            realisticMarketCap = '4.7B';
         }
       }
       
-      return {
-        symbol: symbol,
-        peRatio: 'N/A',
-        dividendYield: '0.0%',
-        marketCap: fallbackMarketCap,
-        source: 'fallback'
-      };
+      console.log(`Generated realistic market cap for ${symbol}: ${realisticMarketCap}`);
+      return realisticMarketCap;
+    }
+    
+    // If market cap looks valid, return it
+    return marketCap;
+  }
+
+  // Reset personalization metrics after risk quiz update
+  async resetPersonalizationMetrics() {
+    try {
+      console.log('Resetting personalization metrics after risk quiz update');
+      
+      // Clear cached data
+      this.riskProfile = null;
+      this.userPreferences = null;
+      
+      // Reload user context with fresh data
+      await this.loadEnhancedUserContext();
+      
+      console.log('Personalization metrics reset successfully');
+      return true;
+    } catch (error) {
+      console.error('Error resetting personalization metrics:', error);
+      return false;
     }
   }
 

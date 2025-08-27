@@ -24,8 +24,8 @@ const COLORS = {
   warning: '#feca57',
   danger: '#ff6b6b',
   text: {
-    primary: '#ffffff',
-    secondary: '#b4bcd0',
+    primary: '#FFFFFF', // Explicit white
+    secondary: '#CCCCCC', // Light grey for labels
     accent: '#8b9dc3',
   },
 };
@@ -71,6 +71,15 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell, onBuy }) => 
   useEffect(() => {
     if (visible && stock && user) {
       console.log('StockDetailsModal: Stock data received:', stock);
+      console.log('StockDetailsModal: LLM data check:', {
+        symbol: stock.symbol,
+        hasInvestmentThesis: !!stock.investmentThesis,
+        hasTechnicalAnalysis: !!stock.technicalAnalysis,
+        hasKeyBenefits: !!stock.keyBenefits,
+        hasKeyRisks: !!stock.keyRisks,
+        personalizationScore: stock.personalizationScore,
+        confidence: stock.confidence
+      });
       loadStockDetails();
     }
   }, [visible, stock, user]);
@@ -81,61 +90,62 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell, onBuy }) => 
     setLoading(true);
     try {
       console.log('Loading stock details for:', stock.symbol);
+      console.log('Stock market cap data:', {
+        marketCap: stock.marketCap,
+        peRatio: stock.peRatio,
+        dividendYield: stock.dividendYield
+      });
       
       // Use the stock data that's passed directly to the modal
       if (stock) {
-        console.log('Using stock data from props:', stock);
-        console.log('Stock LLM data check:', {
-          investmentThesis: !!stock.investmentThesis,
-          technicalAnalysis: !!stock.technicalAnalysis,
-          keyBenefits: !!stock.keyBenefits,
-          keyRisks: !!stock.keyRisks,
+        // Create a comprehensive stock analysis object
+        const analysis = {
+          symbol: stock.symbol,
+          name: stock.name,
+          price: stock.price,
+          change: stock.change,
+          changePercent: stock.changePercent,
+          sector: stock.sector,
+          industry: stock.industry,
+          marketCap: stock.marketCap,
+          peRatio: stock.peRatio,
+          dividendYield: stock.dividendYield,
+          investmentThesis: stock.investmentThesis,
+          technicalAnalysis: stock.technicalAnalysis,
+          keyBenefits: stock.keyBenefits,
+          keyRisks: stock.keyRisks,
           personalizationScore: stock.personalizationScore,
-          confidence: stock.confidence
-        });
-        const sanitizedData = sanitizeAnalysisData(stock);
-        console.log('Sanitized analysis data:', sanitizedData);
-        setStockAnalysis(sanitizedData);
+          sectorDiversification: stock.sectorDiversification,
+          riskAlignment: stock.riskAlignment,
+          portfolioFit: stock.portfolioFit,
+          confidence: stock.confidence,
+          reason: stock.reason,
+          source: stock.source,
+          generatedAt: stock.generatedAt,
+          lastUpdated: stock.lastUpdated
+        };
         
-        // Set company profile from stock data
-        if (stock.sector || stock.industry) {
-          setCompanyProfile({
-            symbol: stock.symbol,
-            name: stock.name,
-            sector: stock.sector,
-            industry: stock.industry,
-            marketCap: stock.marketCap
-          });
-        }
-        
-        // Set financial metrics from stock data
-        if ((stock.peRatio && stock.peRatio !== 'N/A') || (stock.dividendYield && stock.dividendYield !== 'N/A') || (stock.marketCap && stock.marketCap !== 'N/A')) {
-          setFinancialMetrics({
-            symbol: stock.symbol,
-            peRatio: stock.peRatio,
-            dividendYield: stock.dividendYield,
-            marketCap: stock.marketCap
-          });
-        }
+        setStockAnalysis(analysis);
+        console.log('Stock analysis set:', analysis);
       }
-      
-      // Load user choices for this stock (optional)
+
+      // Load user choices for this stock
       try {
-        const userChoicesRef = collection(db, 'users', user.uid, 'userChoices');
-        const choicesQuery = query(userChoicesRef, where('symbol', '==', stock.symbol));
+        const choicesQuery = query(
+          collection(db, 'users', user.uid, 'userChoices'),
+          where('symbol', '==', stock.symbol)
+        );
         const choicesSnapshot = await getDocs(choicesQuery);
         
         if (!choicesSnapshot.empty) {
           const choiceData = choicesSnapshot.docs[0].data();
-          console.log('Found user choice data:', choiceData);
           setUserChoices(choiceData);
+          console.log('User choice loaded:', choiceData);
         }
       } catch (error) {
-        console.log('Error loading user choices:', error);
+        console.warn('Error loading user choices:', error);
       }
 
-      console.log('Stock details loading completed');
-      
     } catch (error) {
       console.error('Error loading stock details:', error);
     } finally {
@@ -246,31 +256,50 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell, onBuy }) => 
   return (
     <Modal
       visible={visible}
-      transparent={true}
       animationType="slide"
+      presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <LinearGradient colors={COLORS.primaryGradient} style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.headerContent}>
-              <Text style={styles.stockSymbol}>{safeStock.symbol}</Text>
-              <Text style={styles.stockName}>{safeStock.name}</Text>
-            </View>
-            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-              <Text style={styles.closeButtonText}>×</Text>
-            </TouchableOpacity>
-          </View>
+      <LinearGradient colors={COLORS.primaryGradient} style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+            <Text style={styles.closeButtonText}>×</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Stock Details</Text>
+          <View style={styles.placeholder} />
+        </View>
 
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            {loading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={COLORS.primary} />
-                <Text style={styles.loadingText}>Loading stock details...</Text>
-              </View>
-            ) : (
-              <>
+        <ScrollView 
+          style={styles.content} 
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Loading stock details...</Text>
+            </View>
+          ) : stockAnalysis ? (
+            <View style={styles.detailsContainer}>
+              {/* Stock Header */}
+              <GlassCard style={styles.headerCard}>
+                <View style={styles.stockHeader}>
+                  <View style={styles.stockInfo}>
+                    <Text style={styles.stockSymbol}>{stockAnalysis.symbol}</Text>
+                    <Text style={styles.stockName}>{stockAnalysis.name}</Text>
+                  </View>
+                  <View style={styles.priceInfo}>
+                    <Text style={styles.currentPrice}>${stockAnalysis.price?.toFixed(2) || '0.00'}</Text>
+                    <Text style={[
+                      styles.priceChange,
+                      { color: (stockAnalysis.changePercent || 0) >= 0 ? COLORS.success : COLORS.danger }
+                    ]}>
+                      {stockAnalysis.changePercent >= 0 ? '+' : ''}{stockAnalysis.changePercent?.toFixed(2) || '0.00'}%
+                    </Text>
+                  </View>
+                </View>
+              </GlassCard>
+
                 {/* Current Price & Performance */}
                 <GlassCard style={styles.priceCard}>
                   <Text style={styles.sectionTitle}>Current Price</Text>
@@ -649,11 +678,14 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell, onBuy }) => 
                      )
                    )}
                  </GlassCard>
-              </>
+              </View>
+            ) : (
+              <View style={styles.emptyStateContainer}>
+                <Text style={styles.emptyStateText}>No stock details available.</Text>
+              </View>
             )}
           </ScrollView>
-        </View>
-      </LinearGradient>
+        </LinearGradient>
     </Modal>
   );
 };
@@ -682,17 +714,6 @@ const styles = StyleSheet.create({
   headerContent: {
     flex: 1,
   },
-  stockSymbol: {
-    ...TYPOGRAPHY.h2,
-    color: COLORS.text.primary,
-    marginBottom: SPACING.xs,
-  },
-  stockName: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.text.secondary,
-    flexWrap: 'wrap',
-    flexShrink: 1,
-  },
   closeButton: {
     width: 40,
     height: 40,
@@ -703,12 +724,47 @@ const styles = StyleSheet.create({
   },
   closeButtonText: {
     fontSize: 24,
-    color: COLORS.text.primary,
-    fontWeight: 'bold',
+    color: '#FFFFFF', // Explicit white
+    fontWeight: '600',
   },
-  content: {
+  headerTitle: {
+    ...TYPOGRAPHY.h3,
+    color: '#FFFFFF', // Explicit white
+    fontWeight: '600',
+  },
+  placeholder: {
+    width: 40,
+  },
+  detailsContainer: {
     flex: 1,
     padding: SPACING.md,
+  },
+  headerCard: {
+    marginBottom: SPACING.lg,
+  },
+  stockHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  stockInfo: {
+    flex: 1,
+  },
+  priceInfo: {
+    alignItems: 'flex-end',
+  },
+  scrollContent: {
+    padding: SPACING.lg,
+    paddingBottom: 120,
+  },
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyStateText: {
+    ...TYPOGRAPHY.body,
+    color: '#FFFFFF', // Explicit white
   },
   loadingContainer: {
     flex: 1,
@@ -717,7 +773,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.secondary,
+    color: '#FFFFFF', // Explicit white
     marginTop: SPACING.md,
   },
   glassCard: {
@@ -733,73 +789,69 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...TYPOGRAPHY.h3,
-    color: COLORS.text.primary,
+    color: '#FFFFFF', // Explicit white
     marginBottom: SPACING.md,
   },
   priceCard: {
     marginBottom: SPACING.lg,
   },
-  priceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  currentPrice: {
-    ...TYPOGRAPHY.h1,
-    color: COLORS.text.primary,
-  },
-  priceChange: {
-    ...TYPOGRAPHY.h3,
-    fontWeight: '600',
-  },
-  holdingInfo: {
-    marginTop: SPACING.md,
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
-  },
-  holdingText: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.text.secondary,
-    marginBottom: SPACING.xs,
-  },
-  holdingValue: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.primary,
-    fontWeight: '600',
+  analysisSection: {
+    marginBottom: SPACING.lg,
   },
   analysisCard: {
     marginBottom: SPACING.lg,
   },
-  metricsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.lg,
+  analysisLabel: {
+    ...TYPOGRAPHY.caption,
+    color: '#CCCCCC', // Light grey for labels
+    marginBottom: SPACING.xs,
   },
-  metric: {
-    flex: 1,
-    alignItems: 'center',
+  analysisText: {
+    ...TYPOGRAPHY.body,
+    color: '#FFFFFF', // Explicit white
+    lineHeight: 22,
+    flexWrap: 'wrap',
+  },
+  benefitPoint: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.success,
+    lineHeight: 22,
+    flexWrap: 'wrap',
+  },
+  riskPoint: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.danger,
+    lineHeight: 22,
+    flexWrap: 'wrap',
+  },
+  metricsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  metricItem: {
+    width: '50%',
+    marginBottom: SPACING.sm,
   },
   metricLabel: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.text.secondary,
+    ...TYPOGRAPHY.small,
+    color: '#CCCCCC', // Light grey for labels
     marginBottom: SPACING.xs,
   },
   metricValue: {
-    ...TYPOGRAPHY.h3,
+    ...TYPOGRAPHY.body,
+    color: '#FFFFFF', // Explicit white
     fontWeight: '600',
   },
   subsectionTitle: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.primary,
+    color: '#FFFFFF', // Explicit white
     fontWeight: '600',
     marginBottom: SPACING.sm,
     marginTop: SPACING.md,
   },
   thesisText: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.secondary,
+    color: '#FFFFFF', // Explicit white
     lineHeight: 22,
     flexWrap: 'wrap',
   },
@@ -817,7 +869,7 @@ const styles = StyleSheet.create({
   },
   summaryText: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.secondary,
+    color: '#FFFFFF', // Explicit white
     lineHeight: 22,
     flexWrap: 'wrap',
   },
@@ -839,12 +891,12 @@ const styles = StyleSheet.create({
   },
   personalizedLabel: {
     ...TYPOGRAPHY.small,
-    color: COLORS.text.secondary,
+    color: '#CCCCCC', // Light grey for labels
     marginBottom: SPACING.xs,
   },
   personalizedValue: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.primary,
+    color: '#FFFFFF', // Explicit white
     fontWeight: '600',
   },
   choiceCard: {
@@ -855,12 +907,12 @@ const styles = StyleSheet.create({
   },
   choiceLabel: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.primary,
+    color: '#FFFFFF', // Explicit white
     marginBottom: SPACING.xs,
   },
   choiceDate: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.text.secondary,
+    color: '#CCCCCC', // Light grey for labels
   },
   infoCard: {
     marginBottom: SPACING.lg,
@@ -876,12 +928,12 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.text.secondary,
+    color: '#CCCCCC', // Light grey for labels
     marginBottom: SPACING.xs,
   },
   infoValue: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.primary,
+    color: '#FFFFFF', // Explicit white
     fontWeight: '500',
     flexWrap: 'wrap',
   },
@@ -894,13 +946,13 @@ const styles = StyleSheet.create({
   },
   reasonLabel: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.text.secondary,
+    color: '#CCCCCC', // Light grey for labels
     fontWeight: '600',
     marginBottom: SPACING.xs,
   },
   reasonText: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.secondary,
+    color: '#FFFFFF', // Explicit white
     lineHeight: 22,
     flexWrap: 'wrap',
   },
@@ -909,7 +961,7 @@ const styles = StyleSheet.create({
   },
   sourceLabel: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.text.secondary,
+    color: '#CCCCCC', // Light grey for labels
     fontWeight: '600',
     marginBottom: SPACING.xs,
   },
@@ -923,13 +975,13 @@ const styles = StyleSheet.create({
   },
   generatedLabel: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.text.secondary,
+    color: '#CCCCCC', // Light grey for labels
     fontWeight: '600',
     marginBottom: SPACING.xs,
   },
   generatedText: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.secondary,
+    color: '#FFFFFF', // Explicit white
     fontStyle: 'italic',
   },
   actionCard: {
@@ -943,7 +995,7 @@ const styles = StyleSheet.create({
   },
   sellButtonText: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.primary,
+    color: '#FFFFFF', // Explicit white
     fontWeight: '600',
   },
   buyButton: {
@@ -954,7 +1006,7 @@ const styles = StyleSheet.create({
   },
   buyButtonText: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.primary,
+    color: '#FFFFFF', // Explicit white
     fontWeight: '600',
   },
   financialCard: {
@@ -974,18 +1026,18 @@ const styles = StyleSheet.create({
   },
   profileLabel: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.text.secondary,
+    color: '#CCCCCC', // Light grey for labels
     marginBottom: SPACING.xs,
   },
   profileValue: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.primary,
+    color: '#FFFFFF', // Explicit white
     fontWeight: '500',
     flexWrap: 'wrap',
   },
   descriptionText: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.secondary,
+    color: '#FFFFFF', // Explicit white
     lineHeight: 22,
     flexWrap: 'wrap',
   },
@@ -1001,90 +1053,13 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   metricLabel: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.text.secondary,
-    marginBottom: SPACING.xs,
-  },
-  metricValue: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.text.primary,
-    fontWeight: '500',
-    flexWrap: 'wrap',
-  },
-  summaryCard: {
-    marginBottom: SPACING.lg,
-  },
-  summaryContent: {
-    gap: SPACING.sm,
-  },
-  summaryItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: SPACING.xs,
-  },
-  summaryLabel: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.text.secondary,
-  },
-  summaryValue: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.text.primary,
-    fontWeight: '600',
-  },
-  analysisSection: {
-    marginBottom: SPACING.lg,
-  },
-  analysisCard: {
-    marginBottom: SPACING.md,
-  },
-  analysisLabel: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.text.secondary,
-    fontWeight: '600',
-    marginBottom: SPACING.sm,
-  },
-  analysisText: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.text.secondary,
-    lineHeight: 22,
-    flexWrap: 'wrap',
-  },
-  benefitPoint: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.success,
-    lineHeight: 22,
-    marginLeft: SPACING.md,
-    marginBottom: SPACING.xs,
-  },
-  riskPoint: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.danger,
-    lineHeight: 22,
-    marginLeft: SPACING.md,
-    marginBottom: SPACING.xs,
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
-  },
-  metricItem: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    padding: SPACING.sm,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  metricLabel: {
     ...TYPOGRAPHY.small,
-    color: COLORS.text.secondary,
+    color: '#CCCCCC', // Light grey for labels
     marginBottom: SPACING.xs,
   },
   metricValue: {
     ...TYPOGRAPHY.body,
-    color: COLORS.primary,
+    color: '#FFFFFF', // Explicit white
     fontWeight: '600',
   },
   confidenceContainer: {
@@ -1097,8 +1072,94 @@ const styles = StyleSheet.create({
   },
   confidenceText: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.text.secondary,
+    color: '#CCCCCC', // Light grey for labels
     textAlign: 'center',
+  },
+  container: {
+    flex: 1,
+    backgroundColor: '#0f0f23',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: SPACING.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+    width: '100%',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    zIndex: 10,
+  },
+  headerTitle: {
+    ...TYPOGRAPHY.h2,
+    color: '#FFFFFF', // Explicit white
+    flex: 1,
+    textAlign: 'center',
+  },
+  placeholder: {
+    width: 40,
+  },
+  detailsContainer: {
+    flex: 1,
+    padding: SPACING.md,
+  },
+  headerCard: {
+    marginBottom: SPACING.lg,
+  },
+  stockHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  stockInfo: {
+    flex: 1,
+  },
+  priceInfo: {
+    alignItems: 'flex-end',
+  },
+  scrollContent: {
+    padding: SPACING.lg,
+    paddingBottom: 120,
+  },
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyStateText: {
+    ...TYPOGRAPHY.body,
+    color: '#FFFFFF', // Explicit white
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    ...TYPOGRAPHY.body,
+    color: '#FFFFFF', // Explicit white
+    marginTop: SPACING.md,
+  },
+  glassCard: {
+    borderRadius: 16,
+    marginBottom: SPACING.md,
+    overflow: 'hidden',
+  },
+  cardBorder: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 16,
+    padding: SPACING.lg,
+  },
+  sectionTitle: {
+    ...TYPOGRAPHY.h3,
+    color: '#FFFFFF', // Explicit white
+    marginBottom: SPACING.md,
+  },
+  priceCard: {
+    marginBottom: SPACING.lg,
   },
 });
 

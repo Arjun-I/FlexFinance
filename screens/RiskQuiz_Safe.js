@@ -14,6 +14,38 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { auth, db } from '../firebase';
 import EnhancedLoadingScreen from '../components/EnhancedLoadingScreen';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
+import stockGenerationService from '../services/stockGenerationService_Enhanced';
+
+const COLORS = {
+  primaryGradient: ['#0f0f23', '#1a1a2e', '#16213e'],
+  cardGradient: ['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)'],
+  primary: '#00d4ff',
+  success: '#4ecdc4',
+  warning: '#feca57',
+  text: {
+    primary: '#ffffff',
+    secondary: '#b4bcd0',
+    accent: '#8b9dc3',
+  },
+};
+
+const SPACING = {
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+  xxl: 48,
+};
+
+const TYPOGRAPHY = {
+  h1: { fontSize: 32, fontWeight: '700', lineHeight: 40 },
+  h2: { fontSize: 24, fontWeight: '600', lineHeight: 32 },
+  h3: { fontSize: 20, fontWeight: '600', lineHeight: 28 },
+  body: { fontSize: 16, fontWeight: '400', lineHeight: 24 },
+  caption: { fontSize: 14, fontWeight: '400', lineHeight: 20 },
+  small: { fontSize: 12, fontWeight: '400', lineHeight: 16 },
+};
 
 const questions = [
   {
@@ -112,7 +144,7 @@ export default function RiskQuiz({ navigation, user }) {
     }
   };
 
-  const handleAnswer = (scores) => {
+  const handleAnswer = async (scores) => {
     setCategoryScores((prev) => {
       const updated = { ...prev };
       for (const cat in scores) {
@@ -125,6 +157,8 @@ export default function RiskQuiz({ navigation, user }) {
       setCurrentQuestion(currentQuestion + 1);
     } else {
       setShowResults(true);
+      // Auto-save profile when quiz is completed
+      await autoSaveProfile();
     }
   };
 
@@ -173,7 +207,7 @@ export default function RiskQuiz({ navigation, user }) {
     };
   };
 
-  const saveProfile = async () => {
+  const autoSaveProfile = async () => {
     try {
       setSubmitting(true);
       
@@ -183,31 +217,35 @@ export default function RiskQuiz({ navigation, user }) {
       }
 
       const profile = getRiskProfile();
-      const userRef = doc(db, 'users', user.uid);
       
+      // Save to standardized location that stock generation service expects
+      const riskProfileRef = doc(db, 'users', user.uid, 'riskProfile', 'current');
+      await setDoc(riskProfileRef, {
+        ...categoryScores,
+        riskLevel: profile.level,
+        lastRiskUpdate: new Date(),
+      });
+      
+      // Also save to user doc for backward compatibility
+      const userRef = doc(db, 'users', user.uid);
       await setDoc(userRef, {
         riskProfile: categoryScores,
         riskLevel: profile.level,
+        riskProfileCompleted: true, // Add this flag
         lastRiskUpdate: new Date(),
       }, { merge: true });
 
-      Alert.alert(
-        'Profile Saved! 🎉',
-        `Your ${profile.level} risk profile has been saved. You'll now get personalized stock recommendations!`,
-        [
-          {
-            text: 'View Recommendations',
-            onPress: () => navigation?.navigate?.('StockComparison'),
-          },
-          {
-            text: 'Back to Dashboard',
-            onPress: () => navigation?.navigate?.('Dashboard'),
-          },
-        ]
-      );
+      // Reset personalization metrics to use new risk profile
+      stockGenerationService.setUserId(user.uid);
+      await stockGenerationService.resetPersonalizationMetrics();
+
+      console.log('Risk profile auto-saved successfully');
+      
+      // Automatically navigate to stock comparison and trigger generation
+      navigation?.navigate?.('StockComparison', { autoGenerate: true });
       
     } catch (error) {
-      console.error('Error saving profile:', error);
+      console.error('Error auto-saving profile:', error);
       Alert.alert('Error', 'Failed to save risk profile. Please try again.');
     } finally {
       setSubmitting(false);
@@ -236,117 +274,41 @@ export default function RiskQuiz({ navigation, user }) {
     return (
       <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.container}>
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          <View style={styles.resultsContainer}>
-            <Text style={styles.resultsTitle}>Your Risk Profile</Text>
-            
-            <View style={[styles.profileCard, { borderColor: profile.color }]}>
+                  <View style={styles.resultsContainer}>
+          <View style={styles.completionHeader}>
+            <View style={styles.completionIcon}>
+              <Text style={styles.completionIconText}>✓</Text>
+            </View>
+            <Text style={styles.completionTitle}>Assessment Complete!</Text>
+            <Text style={styles.completionSubtitle}>
+              Your personalized risk profile has been created
+            </Text>
+          </View>
+          
+          <View style={[styles.profileCard, { borderColor: profile.color }]}>
+            <View style={styles.profileHeader}>
               <Text style={[styles.profileLevel, { color: profile.color }]}>
                 {profile.level}
               </Text>
-              <Text style={styles.profileDescription}>
-                {profile.description}
-              </Text>
-            </View>
-
-            {/* Detailed Scores */}
-            <View style={styles.scoresContainer}>
-              <Text style={styles.scoresTitle}>Detailed Breakdown</Text>
-              
-              <View style={styles.scoreItem}>
-                <Text style={styles.scoreLabel}>Risk Tolerance:</Text>
-                <View style={styles.scoreBar}>
-                  <View 
-                    style={[styles.scoreProgress, { 
-                      width: `${(profile.scores.volatility / 4) * 100}%`,
-                      backgroundColor: profile.scores.volatility > 2.5 ? '#ef4444' : '#10b981'
-                    }]} 
-                  />
-                </View>
-                <Text style={styles.scoreValue}>{profile.scores.volatility.toFixed(1)}/4</Text>
-              </View>
-
-              <View style={styles.scoreItem}>
-                <Text style={styles.scoreLabel}>Time Horizon:</Text>
-                <View style={styles.scoreBar}>
-                  <View 
-                    style={[styles.scoreProgress, { 
-                      width: `${(profile.scores.timeHorizon / 4) * 100}%`,
-                      backgroundColor: '#6366f1'
-                    }]} 
-                  />
-                </View>
-                <Text style={styles.scoreValue}>{profile.scores.timeHorizon.toFixed(1)}/4</Text>
-              </View>
-
-              <View style={styles.scoreItem}>
-                <Text style={styles.scoreLabel}>Liquidity Need:</Text>
-                <View style={styles.scoreBar}>
-                  <View 
-                    style={[styles.scoreProgress, { 
-                      width: `${(profile.scores.liquidity / 4) * 100}%`,
-                      backgroundColor: '#f59e0b'
-                    }]} 
-                  />
-                </View>
-                <Text style={styles.scoreValue}>{profile.scores.liquidity.toFixed(1)}/4</Text>
-              </View>
-
-              <View style={styles.scoreItem}>
-                <Text style={styles.scoreLabel}>Experience:</Text>
-                <View style={styles.scoreBar}>
-                  <View 
-                    style={[styles.scoreProgress, { 
-                      width: `${(profile.scores.knowledge / 4) * 100}%`,
-                      backgroundColor: '#8b5cf6'
-                    }]} 
-                  />
-                </View>
-                <Text style={styles.scoreValue}>{profile.scores.knowledge.toFixed(1)}/4</Text>
-              </View>
-
-              <View style={styles.scoreItem}>
-                <Text style={styles.scoreLabel}>Ethics Focus:</Text>
-                <View style={styles.scoreBar}>
-                  <View 
-                    style={[styles.scoreProgress, { 
-                      width: `${(profile.scores.ethics / 4) * 100}%`,
-                      backgroundColor: '#10b981'
-                    }]} 
-                  />
-                </View>
-                <Text style={styles.scoreValue}>{profile.scores.ethics.toFixed(1)}/4</Text>
+              <View style={[styles.profileBadge, { backgroundColor: profile.color + '20' }]}>
+                <Text style={[styles.profileBadgeText, { color: profile.color }]}>
+                  Risk Level
+                </Text>
               </View>
             </View>
-
-            {/* Action Buttons */}
-            <View style={styles.actionButtons}>
-              <TouchableOpacity 
-                style={styles.primaryButton}
-                onPress={saveProfile}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>💾 Save Profile</Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.secondaryButton}
-                onPress={resetQuiz}
-              >
-                <Text style={styles.secondaryButtonText}>🔄 Retake Quiz</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.recommendationButton} 
-                onPress={() => navigation?.navigate?.('StockComparison')}
-              >
-                <Text style={styles.recommendationButtonText}>Get Recommendations</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.profileDescription}>
+              {profile.description}
+            </Text>
           </View>
+
+          {/* Loading State */}
+          {submitting && (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Saving your profile...</Text>
+            </View>
+          )}
+        </View>
         </ScrollView>
       </LinearGradient>
     );
@@ -401,24 +363,7 @@ export default function RiskQuiz({ navigation, user }) {
           ))}
         </View>
 
-        {/* Navigation */}
-        <View style={styles.navigationContainer}>
-          {currentQuestion > 0 && (
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => setCurrentQuestion(currentQuestion - 1)}
-            >
-              <Text style={styles.backButtonText}>← Previous</Text>
-            </TouchableOpacity>
-          )}
-          
-          <TouchableOpacity
-            style={styles.skipButton}
-            onPress={() => navigation?.navigate?.('Dashboard')}
-          >
-            <Text style={styles.skipButtonText}>Skip for Now</Text>
-          </TouchableOpacity>
-        </View>
+
 
       </ScrollView>
     </LinearGradient>
@@ -428,11 +373,13 @@ export default function RiskQuiz({ navigation, user }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingTop: Platform.OS === 'ios' ? 50 : 30,
   },
   scrollView: {
     flex: 1,
     padding: SPACING.lg,
-    paddingBottom: 120,
+    paddingTop: 60,
+    paddingBottom: 150,
   },
   loadingContainer: {
     flex: 1,
@@ -445,6 +392,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   header: {
+    marginTop: 20,
     marginBottom: 30,
     alignItems: 'center',
   },
@@ -514,44 +462,42 @@ const styles = StyleSheet.create({
     color: '#6366f1',
     fontWeight: 'bold',
   },
-  navigationContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  backButton: {
-    backgroundColor: '#475569',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-  },
-  backButtonText: {
-    color: '#e2e8f0',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  skipButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#6366f1',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-  },
-  skipButtonText: {
-    color: '#6366f1',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+
+
   resultsContainer: {
     alignItems: 'center',
   },
-  resultsTitle: {
-    fontSize: 32,
+  completionHeader: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 40,
+  },
+  completionIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#10b981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  completionIconText: {
+    fontSize: 40,
+    color: '#ffffff',
+    fontWeight: 'bold',
+  },
+  completionTitle: {
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#e2e8f0',
-    marginBottom: 30,
     textAlign: 'center',
+    marginBottom: 8,
+  },
+  completionSubtitle: {
+    fontSize: 16,
+    color: '#94a3b8',
+    textAlign: 'center',
+    lineHeight: 24,
   },
   profileCard: {
     backgroundColor: '#334155',
@@ -560,12 +506,25 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     borderWidth: 2,
     width: '100%',
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 16,
   },
   profileLevel: {
     fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 12,
+  },
+  profileBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  profileBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   profileDescription: {
     fontSize: 16,
@@ -573,47 +532,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
   },
-  scoresContainer: {
-    width: '100%',
-    marginBottom: 30,
-  },
-  scoresTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#e2e8f0',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  scoreItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  scoreLabel: {
-    fontSize: 14,
-    color: '#94a3b8',
-    width: 120,
-  },
-  scoreBar: {
-    flex: 1,
-    height: 8,
-    backgroundColor: '#334155',
-    borderRadius: 4,
-    marginHorizontal: 12,
-  },
-  scoreProgress: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  scoreValue: {
-    fontSize: 14,
-    color: '#e2e8f0',
-    fontWeight: '600',
-    width: 40,
-    textAlign: 'right',
-  },
+
   actionButtons: {
     width: '100%',
+    marginTop: 20,
+    marginBottom: 40,
   },
   primaryButton: {
     backgroundColor: '#6366f1',

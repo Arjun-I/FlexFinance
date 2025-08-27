@@ -13,7 +13,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { db } from '../firebase';
 import EnhancedLoadingScreen from '../components/EnhancedLoadingScreen';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
 
 const COLORS = {
   primaryGradient: ['#0f0f23', '#1a1a2e', '#16213e'],
@@ -70,28 +70,150 @@ const Profile_Safe = ({ user, navigation }) => {
     }
   }, [user]);
 
+  // Refresh profile data when user changes
+  useEffect(() => {
+    if (user) {
+      loadProfileData();
+    }
+  }, [user]);
+
+  // Monitor risk profile state changes
+  useEffect(() => {
+    console.log('Risk profile state changed:', {
+      hasRiskProfile: !!riskProfile,
+      riskProfileData: riskProfile
+    });
+  }, [riskProfile]);
+
   const loadProfileData = async () => {
     try {
       setLoading(true);
+      console.log('Loading profile data for user:', user.uid);
       
-      // Load user profile and risk quiz results
-      const [userDoc, quizDoc] = await Promise.all([
+      // Load user profile and risk quiz results from standardized location
+      const [userDoc, riskProfileDoc] = await Promise.all([
         getDoc(doc(db, 'users', user.uid)),
-        getDoc(doc(db, 'users', user.uid, 'preferences', 'quiz'))
+        getDoc(doc(db, 'users', user.uid, 'riskProfile', 'current'))
       ]);
 
+      let userData = null; // Declare userData at function scope
+      let hasRiskProfileInUserDoc = false; // Track if we found risk profile in user doc
+
       if (userDoc.exists()) {
-        setUserProfile(userDoc.data());
+        userData = userDoc.data();
+        setUserProfile(userData);
+        console.log('User profile loaded:', {
+          hasRiskProfile: !!userData?.riskProfile,
+          riskProfileCompleted: userData?.riskProfileCompleted,
+          riskProfileData: userData?.riskProfile
+        });
+        
+        // Check for risk profile in user document first (primary location)
+        if (userData?.riskProfile && userData?.riskProfileCompleted) {
+          console.log('✅ Found risk profile in user document');
+          setRiskProfile(userData);
+          hasRiskProfileInUserDoc = true;
+        }
       }
 
-      if (quizDoc.exists()) {
-        setRiskProfile(quizDoc.data());
+      // Check dedicated risk profile document (secondary location)
+      if (riskProfileDoc.exists()) {
+        const riskData = riskProfileDoc.data();
+        console.log('✅ Found risk profile in dedicated document:', riskData);
+        setRiskProfile(riskData);
+        
+        // If we found it in the dedicated document but not in user doc, update user doc
+        if (!hasRiskProfileInUserDoc && riskData) {
+          console.log('Updating user document with risk profile completion flag');
+          try {
+            const userRef = doc(db, 'users', user.uid);
+            await updateDoc(userRef, {
+              riskProfileCompleted: true,
+              lastRiskUpdate: riskData.lastRiskUpdate || new Date(),
+            });
+          } catch (error) {
+            console.warn('Failed to update user document with risk profile flag:', error);
+          }
+        }
+      }
+
+      // Final check - if we still don't have a risk profile, log it
+      if (!riskProfile) {
+        console.log('❌ No risk profile found in any location');
+      } else {
+        console.log('✅ Risk profile successfully loaded');
       }
 
     } catch (error) {
       console.error('Error loading profile data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Manual refresh function that can be called from other components
+  const refreshProfile = useCallback(async () => {
+    if (user) {
+      console.log('Manually refreshing profile data...');
+      await loadProfileData();
+      console.log('Profile refresh completed');
+    }
+  }, [user]);
+
+  // Handle resetting risk profile
+  const handleResetRiskProfile = async () => {
+    try {
+      Alert.alert(
+        'Reset Risk Profile',
+        'Are you sure you want to reset your risk preferences? This will remove your current risk assessment.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Reset',
+            style: 'destructive',
+            onPress: async () => {
+              if (user) {
+                try {
+                  const userRef = doc(db, 'users', user.uid);
+                  
+                  // Clear risk profile
+                  await updateDoc(userRef, {
+                    riskProfile: null,
+                    riskProfileCompleted: false,
+                  });
+                  
+                  // Clear existing stock recommendations
+                  const recentStocksRef = collection(db, 'users', user.uid, 'recentStocks');
+                  const oldStocksSnapshot = await getDocs(recentStocksRef);
+                  const deletePromises = oldStocksSnapshot.docs.map(doc => deleteDoc(doc.ref));
+                  await Promise.all(deletePromises);
+                  
+                  // Clear user choices
+                  const userChoicesRef = collection(db, 'users', user.uid, 'userChoices');
+                  const userChoicesSnapshot = await getDocs(userChoicesRef);
+                  const deleteChoicesPromises = userChoicesSnapshot.docs.map(doc => deleteDoc(doc.ref));
+                  await Promise.all(deleteChoicesPromises);
+                  
+                  setRiskProfile(null);
+                  Alert.alert('Success', 'Risk profile has been reset and old recommendations cleared. You can now retake the assessment for fresh recommendations.');
+                  
+                  // Navigate to stock comparison to clear the current view
+                  navigation?.navigate?.('StockComparison', { riskProfileReset: true });
+                } catch (error) {
+                  console.error('Error clearing data:', error);
+                  Alert.alert('Success', 'Risk profile has been reset. You can now retake the assessment.');
+                }
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Error resetting risk profile:', error);
+      Alert.alert('Error', 'Failed to reset risk profile. Please try again.');
     }
   };
 
@@ -132,57 +254,60 @@ const Profile_Safe = ({ user, navigation }) => {
         
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Profile</Text>
-          <Text style={styles.headerSubtitle}>Your investment preferences</Text>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Profile</Text>
+            <Text style={styles.headerSubtitle}>Your investment preferences</Text>
+          </View>
+          <TouchableOpacity style={styles.refreshButton} onPress={refreshProfile}>
+            <Text style={styles.refreshButtonText}>↻</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* User Info */}
+        {/* User Info Card */}
         <GlassCard style={styles.userCard}>
-          <Text style={styles.cardTitle}>Account Information</Text>
-          <View style={styles.userInfo}>
-            <Text style={styles.userEmail}>{user?.email}</Text>
-            <Text style={styles.userSince}>
-              Member since {userProfile?.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
-            </Text>
+          <View style={styles.userHeader}>
+            <View style={styles.userAvatar}>
+              <Text style={styles.userInitials}>
+                {user?.email?.charAt(0).toUpperCase() || 'U'}
+              </Text>
+            </View>
+            <View style={styles.userDetails}>
+              <Text style={styles.userEmail}>{user?.email}</Text>
+              <Text style={styles.userSince}>
+                Member since {userProfile?.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
+              </Text>
+            </View>
           </View>
         </GlassCard>
 
-        {/* Risk Profile */}
+        {/* Risk Profile Card */}
         <GlassCard style={styles.riskCard}>
-          <Text style={styles.cardTitle}>Risk Profile</Text>
+          <View style={styles.riskHeader}>
+            <Text style={styles.cardTitle}>Risk Profile</Text>
+            {riskProfile && (
+              <View style={styles.riskBadge}>
+                <Text style={styles.riskBadgeText}>{getRiskLevel(riskProfile)}</Text>
+              </View>
+            )}
+          </View>
+          
           {riskProfile ? (
             <View style={styles.riskContent}>
-              <View style={styles.riskLevel}>
-                <Text style={styles.riskLevelText}>{getRiskLevel(riskProfile)}</Text>
-                <Text style={styles.riskDescription}>
-                  {getRiskDescription(getRiskLevel(riskProfile))}
-                </Text>
-              </View>
+              <Text style={styles.riskDescription}>
+                {getRiskDescription(getRiskLevel(riskProfile))}
+              </Text>
               
-              <View style={styles.riskScores}>
-                <Text style={styles.scoresTitle}>Your Scores</Text>
-                {riskProfile.riskProfile && Object.entries(riskProfile.riskProfile).map(([key, value]) => (
-                  <View key={key} style={styles.scoreRow}>
-                    <Text style={styles.scoreLabel}>
-                      {key.charAt(0).toUpperCase() + key.slice(1)}
-                    </Text>
-                    <View style={styles.scoreBar}>
-                      <View 
-                        style={[
-                          styles.scoreProgress, 
-                          { width: `${(value / 5) * 100}%` }
-                        ]} 
-                      />
-                    </View>
-                    <Text style={styles.scoreValue}>{value}/5</Text>
-                  </View>
-                ))}
-              </View>
+              <TouchableOpacity 
+                style={styles.resetButton}
+                onPress={handleResetRiskProfile}
+              >
+                <Text style={styles.resetButtonText}>Reset Risk Preferences</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.noRiskProfile}>
               <Text style={styles.noRiskText}>
-                Complete the risk assessment to get personalized recommendations.
+                Complete the risk assessment to get personalized stock recommendations.
               </Text>
               <TouchableOpacity 
                 style={styles.quizButton}
@@ -194,30 +319,26 @@ const Profile_Safe = ({ user, navigation }) => {
           )}
         </GlassCard>
 
-        {/* Settings */}
-        <GlassCard style={styles.settingsCard}>
-          <Text style={styles.cardTitle}>Settings</Text>
-          <TouchableOpacity style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Notifications</Text>
-            <Text style={styles.settingValue}>On</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Privacy</Text>
-            <Text style={styles.settingValue}>Private</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Currency</Text>
-            <Text style={styles.settingValue}>USD</Text>
-          </TouchableOpacity>
-        </GlassCard>
 
-        {/* Back Button */}
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation?.navigate('Dashboard')}
-        >
-          <Text style={styles.backButtonText}>Back to Dashboard</Text>
-        </TouchableOpacity>
+
+        {/* Quick Actions */}
+        <GlassCard style={styles.actionsCard}>
+          <Text style={styles.cardTitle}>Quick Actions</Text>
+          <View style={styles.actionButtons}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => navigation?.navigate('Portfolio')}
+            >
+              <Text style={styles.actionButtonText}>View Portfolio</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => navigation?.navigate('StockComparison')}
+            >
+              <Text style={styles.actionButtonText}>Discover Stocks</Text>
+            </TouchableOpacity>
+          </View>
+        </GlassCard>
         
       </ScrollView>
     </LinearGradient>
@@ -243,8 +364,24 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md,
   },
   header: {
-    marginBottom: SPACING.lg,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: SPACING.lg,
+  },
+  headerContent: {
+    flex: 1,
+  },
+  refreshButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 8,
+  },
+  refreshButtonText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.text.primary,
+    fontWeight: '600',
   },
   headerTitle: {
     ...TYPOGRAPHY.h1,
@@ -270,6 +407,125 @@ const styles = StyleSheet.create({
         elevation: 12,
       },
     }),
+  },
+  userCard: {
+    marginBottom: SPACING.lg,
+  },
+  userHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  userAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.md,
+  },
+  userInitials: {
+    ...TYPOGRAPHY.h2,
+    color: COLORS.text.primary,
+    fontWeight: '700',
+  },
+  userDetails: {
+    flex: 1,
+  },
+  userEmail: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.text.primary,
+    fontWeight: '600',
+    marginBottom: SPACING.xs,
+  },
+  userSince: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.text.secondary,
+  },
+  riskCard: {
+    marginBottom: SPACING.lg,
+  },
+  riskHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  riskBadge: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 12,
+  },
+  riskBadgeText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.text.primary,
+    fontWeight: '600',
+  },
+  riskContent: {
+    gap: SPACING.md,
+  },
+  riskDescription: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.text.secondary,
+    lineHeight: 22,
+    marginBottom: SPACING.md,
+  },
+  resetButton: {
+    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 48, 0.3)',
+    paddingVertical: SPACING.md,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  resetButtonText: {
+    ...TYPOGRAPHY.caption,
+    color: '#ff3b30',
+    fontWeight: '600',
+  },
+  noRiskProfile: {
+    alignItems: 'center',
+    padding: SPACING.lg,
+  },
+  noRiskText: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+    marginBottom: SPACING.lg,
+    lineHeight: 22,
+  },
+  quizButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.md,
+    borderRadius: 12,
+  },
+  quizButtonText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.text.primary,
+    fontWeight: '600',
+  },
+  actionsCard: {
+    marginBottom: SPACING.lg,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+  },
+  actionButton: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.3)',
+    paddingVertical: SPACING.md,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  actionButtonText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.primary,
+    fontWeight: '600',
   },
   cardBorder: {
     borderWidth: 1,
