@@ -1,17 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TouchableOpacity,
+  Modal,
   Dimensions,
-  ScrollView,
   ActivityIndicator,
-  Platform,
+  ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getChartData } from '../services/chartDataService';
+import { getStockHistory } from '../services/finnhubService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -72,10 +71,38 @@ const FullScreenChartModal = ({ visible, stock, onClose }) => {
   const loadChartData = async () => {
     setLoading(true);
     try {
-      const data = await getChartData(stock.symbol, selectedPeriod);
-      setChartData(data);
+      const historyData = await getStockHistory(stock.symbol, selectedPeriod);
+      console.log('Raw chart data for', stock.symbol, ':', historyData);
+      
+      if (historyData && historyData.length > 0) {
+        // Transform the data format for the chart
+        const prices = historyData.map(item => item.close || item.price || 0).filter(price => price > 0);
+        const timestamps = historyData.map(item => 
+          item.timestamp ? item.timestamp * 1000 : new Date().getTime()
+        );
+        const volumes = historyData.map(item => item.volume || 0);
+        
+        // Validate we have valid price data
+        if (prices.length > 0 && prices.some(price => !isNaN(price) && price > 0)) {
+          const chartData = {
+            prices,
+            timestamps,
+            volumes
+          };
+          
+          console.log('Transformed chart data:', chartData);
+          setChartData(chartData);
+        } else {
+          console.log('Invalid price data for', stock.symbol);
+          setChartData(null);
+        }
+      } else {
+        console.log('No chart data available for', stock.symbol);
+        setChartData(null);
+      }
     } catch (error) {
       console.error('Error loading chart data:', error);
+      setChartData(null);
     } finally {
       setLoading(false);
     }
@@ -110,19 +137,28 @@ const FullScreenChartModal = ({ visible, stock, onClose }) => {
   };
 
   const renderChart = () => {
-    if (!chartData || !chartData.prices) return null;
+    if (!chartData || !chartData.prices || chartData.prices.length === 0) return null;
 
-    const prices = chartData.prices;
+    const prices = chartData.prices.filter(price => !isNaN(price) && price > 0);
+    if (prices.length === 0) return null;
+    
     const timestamps = chartData.timestamps || [];
     const maxPrice = Math.max(...prices);
     const minPrice = Math.min(...prices);
+    
+    // Add padding to the price range for better visualization
     const priceRange = maxPrice - minPrice;
+    const padding = priceRange * 0.1; // 10% padding
+    const adjustedMin = Math.max(0, minPrice - padding);
+    const adjustedMax = maxPrice + padding;
+    const adjustedRange = adjustedMax - adjustedMin;
+    
     const chartHeight = height * 0.4;
     const chartWidth = width - 32;
 
     const getYPosition = (price) => {
-      if (priceRange === 0) return chartHeight / 2;
-      return chartHeight - ((price - minPrice) / priceRange) * chartHeight;
+      if (adjustedRange === 0) return chartHeight / 2;
+      return chartHeight - ((price - adjustedMin) / adjustedRange) * chartHeight;
     };
 
     const handlePointPress = (index) => {
@@ -135,8 +171,8 @@ const FullScreenChartModal = ({ visible, stock, onClose }) => {
       <View style={styles.chartContainer}>
         {/* Price Labels */}
         <View style={styles.priceLabels}>
-          <Text style={styles.priceLabel}>{formatPrice(maxPrice)}</Text>
-          <Text style={styles.priceLabel}>{formatPrice(minPrice)}</Text>
+          <Text style={styles.priceLabel}>{formatPrice(adjustedMax)}</Text>
+          <Text style={styles.priceLabel}>{formatPrice(adjustedMin)}</Text>
         </View>
 
         {/* Chart Area */}
@@ -292,8 +328,23 @@ const FullScreenChartModal = ({ visible, stock, onClose }) => {
               <ActivityIndicator size="large" color={COLORS.primary} />
               <Text style={styles.loadingText}>Loading chart data...</Text>
             </View>
-          ) : (
+          ) : chartData && chartData.prices && chartData.prices.length > 0 ? (
             renderChart()
+          ) : (
+            <View style={styles.noDataContainer}>
+              <Text style={styles.noDataTitle}>📊 Chart Data Unavailable</Text>
+              <Text style={styles.noDataText}>
+                Chart data is currently unavailable for {stock?.symbol}.{'\n'}
+                This may be due to API rate limits or temporary data issues.{'\n'}
+                Please try again later.
+              </Text>
+              <TouchableOpacity 
+                style={styles.retryButton}
+                onPress={loadChartData}
+              >
+                <Text style={styles.retryButtonText}>Try Again</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
 
@@ -309,35 +360,7 @@ const FullScreenChartModal = ({ visible, stock, onClose }) => {
           </View>
         )}
 
-        {/* Stock Details */}
-        <ScrollView style={styles.detailsSection} showsVerticalScrollIndicator={false}>
-          <View style={styles.detailCard}>
-            <Text style={styles.detailTitle}>Stock Information</Text>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Sector:</Text>
-              <Text style={styles.detailValue}>{stock?.sector || 'N/A'}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Industry:</Text>
-              <Text style={styles.detailValue}>{stock?.industry || 'N/A'}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Market Cap:</Text>
-              <Text style={styles.detailValue}>{stock?.marketCap || 'N/A'}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>P/E Ratio:</Text>
-              <Text style={styles.detailValue}>{stock?.peRatio || 'N/A'}</Text>
-            </View>
-          </View>
 
-          {stock?.investmentThesis && (
-            <View style={styles.detailCard}>
-              <Text style={styles.detailTitle}>Investment Thesis</Text>
-              <Text style={styles.detailText}>{stock.investmentThesis}</Text>
-            </View>
-          )}
-        </ScrollView>
       </LinearGradient>
     </Modal>
   );
@@ -431,6 +454,37 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.body,
     color: COLORS.text.secondary,
     marginTop: SPACING.md,
+  },
+  noDataContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.xl,
+  },
+  noDataTitle: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.text.primary,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: SPACING.md,
+  },
+  noDataText: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: SPACING.xl,
+  },
+  retryButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.md,
+    borderRadius: 25,
+  },
+  retryButtonText: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.text.primary,
+    fontWeight: '600',
   },
   chartContainer: {
     flex: 1,

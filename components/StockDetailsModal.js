@@ -12,7 +12,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { db } from '../firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { getCompanyProfile, getCompanyFinancials } from '../services/finnhubService';
+// Temporarily comment out finnhubService to avoid reference errors
+// import { getCompanyProfile, getCompanyFinancials } from '../services/finnhubService';
 import FullScreenChartModal from './FullScreenChartModal';
 
 const COLORS = {
@@ -60,7 +61,7 @@ const GlassCard = ({ children, style }) => {
   );
 };
 
-const StockDetailsModal = ({ visible, stock, onClose, user, onSell }) => {
+const StockDetailsModal = ({ visible, stock, onClose, user, onSell, onBuy }) => {
   const [loading, setLoading] = useState(false);
   const [stockAnalysis, setStockAnalysis] = useState(null);
   const [userChoices, setUserChoices] = useState(null);
@@ -69,6 +70,7 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell }) => {
 
   useEffect(() => {
     if (visible && stock && user) {
+      console.log('StockDetailsModal: Stock data received:', stock);
       loadStockDetails();
     }
   }, [visible, stock, user]);
@@ -80,82 +82,57 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell }) => {
     try {
       console.log('Loading stock details for:', stock.symbol);
       
-      // Parallel loading for better performance
-      const [analysisPromise, choicesPromise, profilePromise, financialsPromise] = await Promise.allSettled([
-        // Load stock analysis from generated stocks
-        (async () => {
-          try {
-            const generatedStocksRef = collection(db, 'users', user.uid, 'generatedStocks');
-            const q = query(generatedStocksRef, where('symbol', '==', stock.symbol));
-            const snapshot = await getDocs(q);
-            
-            if (!snapshot.empty) {
-              const analysisData = snapshot.docs[0].data();
-              console.log('Found analysis data:', analysisData);
-              // Validate and sanitize the data
-              const sanitizedData = sanitizeAnalysisData(analysisData);
-              setStockAnalysis(sanitizedData);
-            } else {
-              // Try recent stocks collection
-              const recentStocksRef = collection(db, 'users', user.uid, 'recentStocks');
-              const recentQ = query(recentStocksRef, where('symbol', '==', stock.symbol));
-              const recentSnapshot = await getDocs(recentQ);
-              
-              if (!recentSnapshot.empty) {
-                const recentData = recentSnapshot.docs[0].data();
-                console.log('Found recent stock data:', recentData);
-                const sanitizedData = sanitizeAnalysisData(recentData);
-                setStockAnalysis(sanitizedData);
-              }
-            }
-          } catch (error) {
-            console.log('Error loading analysis data:', error);
-          }
-        })(),
-
-        // Load user choices for this stock
-        (async () => {
-          try {
-            const userChoicesRef = collection(db, 'users', user.uid, 'userChoices');
-            const choicesQuery = query(userChoicesRef, where('symbol', '==', stock.symbol));
-            const choicesSnapshot = await getDocs(choicesQuery);
-            
-            if (!choicesSnapshot.empty) {
-              const choiceData = choicesSnapshot.docs[0].data();
-              console.log('Found user choice data:', choiceData);
-              setUserChoices(choiceData);
-            }
-          } catch (error) {
-            console.log('Error loading user choices:', error);
-          }
-        })(),
-
-        // Load company profile
-        (async () => {
-          try {
-            const profile = await getCompanyProfile(stock.symbol);
-            if (profile) {
-              console.log('Found company profile:', profile);
-              setCompanyProfile(profile);
-            }
-          } catch (error) {
-            console.log('Error loading company profile:', error);
-          }
-        })(),
-
-        // Load financial metrics
-        (async () => {
-          try {
-            const financials = await getCompanyFinancials(stock.symbol);
-            if (financials) {
-              console.log('Found financial data:', financials);
-              setFinancialMetrics(financials);
-            }
-          } catch (error) {
-            console.log('Error loading financial data:', error);
-          }
-        })()
-      ]);
+      // Use the stock data that's passed directly to the modal
+      if (stock) {
+        console.log('Using stock data from props:', stock);
+        console.log('Stock LLM data check:', {
+          investmentThesis: !!stock.investmentThesis,
+          technicalAnalysis: !!stock.technicalAnalysis,
+          keyBenefits: !!stock.keyBenefits,
+          keyRisks: !!stock.keyRisks,
+          personalizationScore: stock.personalizationScore,
+          confidence: stock.confidence
+        });
+        const sanitizedData = sanitizeAnalysisData(stock);
+        console.log('Sanitized analysis data:', sanitizedData);
+        setStockAnalysis(sanitizedData);
+        
+        // Set company profile from stock data
+        if (stock.sector || stock.industry) {
+          setCompanyProfile({
+            symbol: stock.symbol,
+            name: stock.name,
+            sector: stock.sector,
+            industry: stock.industry,
+            marketCap: stock.marketCap
+          });
+        }
+        
+        // Set financial metrics from stock data
+        if ((stock.peRatio && stock.peRatio !== 'N/A') || (stock.dividendYield && stock.dividendYield !== 'N/A') || (stock.marketCap && stock.marketCap !== 'N/A')) {
+          setFinancialMetrics({
+            symbol: stock.symbol,
+            peRatio: stock.peRatio,
+            dividendYield: stock.dividendYield,
+            marketCap: stock.marketCap
+          });
+        }
+      }
+      
+      // Load user choices for this stock (optional)
+      try {
+        const userChoicesRef = collection(db, 'users', user.uid, 'userChoices');
+        const choicesQuery = query(userChoicesRef, where('symbol', '==', stock.symbol));
+        const choicesSnapshot = await getDocs(choicesQuery);
+        
+        if (!choicesSnapshot.empty) {
+          const choiceData = choicesSnapshot.docs[0].data();
+          console.log('Found user choice data:', choiceData);
+          setUserChoices(choiceData);
+        }
+      } catch (error) {
+        console.log('Error loading user choices:', error);
+      }
 
       console.log('Stock details loading completed');
       
@@ -170,14 +147,24 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell }) => {
   const sanitizeAnalysisData = (data) => {
     if (!data) return null;
     
+    console.log('Sanitizing data with LLM fields:', {
+      investmentThesis: data.investmentThesis,
+      technicalAnalysis: data.technicalAnalysis,
+      keyBenefits: data.keyBenefits,
+      keyRisks: data.keyRisks,
+      personalizationScore: data.personalizationScore,
+      confidence: data.confidence
+    });
+    
     return {
       ...data,
-      investmentThesis: typeof data.investmentThesis === 'string' ? data.investmentThesis : 'Analysis not available',
-      keyBenefits: Array.isArray(data.keyBenefits) ? data.keyBenefits.filter(b => typeof b === 'string') : 
-                   typeof data.keyBenefits === 'string' ? [data.keyBenefits] : ['Benefits analysis available'],
-      keyRisks: Array.isArray(data.keyRisks) ? data.keyRisks.filter(r => typeof r === 'string') : 
-                typeof data.keyRisks === 'string' ? [data.keyRisks] : ['Risk analysis available'],
-      analysis: typeof data.analysis === 'string' ? data.analysis : 'Technical analysis not available',
+      investmentThesis: typeof data.investmentThesis === 'string' && data.investmentThesis.trim() !== '' ? data.investmentThesis : null,
+      keyBenefits: Array.isArray(data.keyBenefits) && data.keyBenefits.length > 0 ? data.keyBenefits.filter(b => typeof b === 'string' && b.trim() !== '') : 
+                   typeof data.keyBenefits === 'string' && data.keyBenefits.trim() !== '' ? [data.keyBenefits] : null,
+      keyRisks: Array.isArray(data.keyRisks) && data.keyRisks.length > 0 ? data.keyRisks.filter(r => typeof r === 'string' && r.trim() !== '') : 
+                typeof data.keyRisks === 'string' && data.keyRisks.trim() !== '' ? [data.keyRisks] : null,
+      technicalAnalysis: typeof data.technicalAnalysis === 'string' && data.technicalAnalysis.trim() !== '' ? data.technicalAnalysis : null,
+      analysis: typeof data.analysis === 'string' && data.analysis.trim() !== '' ? data.analysis : null,
       personalizationScore: typeof data.personalizationScore === 'number' && !isNaN(data.personalizationScore) ? data.personalizationScore : null,
       sectorDiversification: typeof data.sectorDiversification === 'number' && !isNaN(data.sectorDiversification) ? data.sectorDiversification : null,
       riskAlignment: typeof data.riskAlignment === 'number' && !isNaN(data.riskAlignment) ? data.riskAlignment : null,
@@ -211,6 +198,33 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell }) => {
     if (confidence >= 80) return COLORS.success;
     if (confidence >= 60) return COLORS.warning;
     return COLORS.danger;
+  };
+
+  // Clean and format text for better readability
+  const cleanText = (text) => {
+    if (!text || typeof text !== 'string') return text;
+    
+    return text
+      // Remove common LLM formatting artifacts
+      .replace(/^["']|["']$/g, '') // Remove leading/trailing quotes
+      .replace(/^\[|\]$/g, '') // Remove leading/trailing brackets
+      .replace(/^\{|\}$/g, '') // Remove leading/trailing braces
+      .replace(/^```.*?\n|\n```$/g, '') // Remove markdown code blocks
+      .replace(/^#+\s*/g, '') // Remove markdown headers
+      .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold markdown
+      .replace(/\*(.*?)\*/g, '$1') // Remove italic markdown
+      .replace(/`(.*?)`/g, '$1') // Remove inline code
+      .replace(/\n\s*\n/g, ' ') // Replace multiple newlines with single space
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      // Remove common prefixes that LLMs add
+      .replace(/^(thesis|investment thesis|analysis|recommendation):\s*/i, '')
+      .replace(/^(here's|here is|the|this is):\s*/i, '')
+      .replace(/^(based on|considering|given):\s*/i, '')
+      // Remove any remaining quotes throughout the text
+      .replace(/["']/g, '')
+      // Remove any remaining brackets or braces
+      .replace(/[\[\]{}]/g, '')
+      .trim(); // Remove leading/trailing whitespace
   };
 
   if (!stock) return null;
@@ -283,49 +297,115 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell }) => {
                   )}
                 </GlassCard>
 
-                {/* Stock Analysis (if available) */}
+                {/* Comprehensive Investment Analysis */}
                 {stockAnalysis && (
                   <View style={styles.analysisSection}>
                     <Text style={styles.sectionTitle}>Investment Analysis</Text>
                     
+                    {/* Investment Thesis */}
                     {stockAnalysis.investmentThesis && (
-                      <View style={styles.analysisItem}>
+                      <GlassCard style={styles.analysisCard}>
                         <Text style={styles.analysisLabel}>Investment Thesis</Text>
-                        <Text style={styles.analysisText}>{stockAnalysis.investmentThesis}</Text>
-                      </View>
+                        <Text style={styles.analysisText}>{cleanText(stockAnalysis.investmentThesis)}</Text>
+                      </GlassCard>
                     )}
 
+                    {/* Key Benefits */}
                     {stockAnalysis.keyBenefits && (
-                      <View style={styles.analysisItem}>
+                      <GlassCard style={styles.analysisCard}>
                         <Text style={styles.analysisLabel}>Key Benefits</Text>
                         {Array.isArray(stockAnalysis.keyBenefits) ? (
                           stockAnalysis.keyBenefits.map((benefit, index) => (
-                            <Text key={index} style={styles.bulletPoint}>• {benefit}</Text>
+                            <Text key={index} style={styles.benefitPoint}>• {cleanText(benefit)}</Text>
                           ))
                         ) : (
-                          <Text style={styles.analysisText}>{stockAnalysis.keyBenefits}</Text>
+                          <Text style={styles.analysisText}>{cleanText(stockAnalysis.keyBenefits)}</Text>
                         )}
-                      </View>
+                      </GlassCard>
                     )}
 
+                    {/* Key Risks */}
                     {stockAnalysis.keyRisks && (
-                      <View style={styles.analysisItem}>
+                      <GlassCard style={styles.analysisCard}>
                         <Text style={styles.analysisLabel}>Key Risks</Text>
                         {Array.isArray(stockAnalysis.keyRisks) ? (
                           stockAnalysis.keyRisks.map((risk, index) => (
-                            <Text key={index} style={styles.bulletPoint}>• {risk}</Text>
+                            <Text key={index} style={styles.riskPoint}>• {cleanText(risk)}</Text>
                           ))
                         ) : (
-                          <Text style={styles.analysisText}>{stockAnalysis.keyRisks}</Text>
+                          <Text style={styles.analysisText}>{cleanText(stockAnalysis.keyRisks)}</Text>
                         )}
-                      </View>
+                      </GlassCard>
                     )}
 
-                    {stockAnalysis.analysis && (
-                      <View style={styles.analysisItem}>
+                    {/* Personalization Metrics */}
+                    {(stockAnalysis.personalizationScore !== undefined || 
+                      stockAnalysis.sectorDiversification !== undefined || 
+                      stockAnalysis.riskAlignment !== undefined || 
+                      stockAnalysis.portfolioFit !== undefined) && (
+                      <GlassCard style={styles.analysisCard}>
+                        <Text style={styles.analysisLabel}>Personalization Metrics</Text>
+                        <View style={styles.metricsGrid}>
+                          {stockAnalysis.personalizationScore !== undefined && (
+                            <View style={styles.metricItem}>
+                              <Text style={styles.metricLabel}>Overall Score</Text>
+                              <Text style={styles.metricValue}>
+                                {Math.round(stockAnalysis.personalizationScore * 100)}%
+                              </Text>
+                            </View>
+                          )}
+                          {stockAnalysis.sectorDiversification !== undefined && (
+                            <View style={styles.metricItem}>
+                              <Text style={styles.metricLabel}>Diversification</Text>
+                              <Text style={styles.metricValue}>
+                                {Math.round(stockAnalysis.sectorDiversification * 100)}%
+                              </Text>
+                            </View>
+                          )}
+                          {stockAnalysis.riskAlignment !== undefined && (
+                            <View style={styles.metricItem}>
+                              <Text style={styles.metricLabel}>Risk Alignment</Text>
+                              <Text style={styles.metricValue}>
+                                {Math.round(stockAnalysis.riskAlignment * 100)}%
+                              </Text>
+                            </View>
+                          )}
+                          {stockAnalysis.portfolioFit !== undefined && (
+                            <View style={styles.metricItem}>
+                              <Text style={styles.metricLabel}>Portfolio Fit</Text>
+                              <Text style={styles.metricValue}>
+                                {Math.round(stockAnalysis.portfolioFit * 100)}%
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      </GlassCard>
+                    )}
+
+                    {/* Technical Analysis */}
+                    {stockAnalysis.technicalAnalysis && (
+                      <GlassCard style={styles.analysisCard}>
                         <Text style={styles.analysisLabel}>Technical Analysis</Text>
-                        <Text style={styles.analysisText}>{stockAnalysis.analysis}</Text>
-                      </View>
+                        <Text style={styles.analysisText}>{cleanText(stockAnalysis.technicalAnalysis)}</Text>
+                      </GlassCard>
+                    )}
+
+                    {/* Confidence Score */}
+                    {stockAnalysis.confidence !== undefined && (
+                      <GlassCard style={styles.analysisCard}>
+                        <Text style={styles.analysisLabel}>AI Confidence</Text>
+                        <View style={styles.confidenceContainer}>
+                          <Text style={[
+                            styles.confidenceValue,
+                            { color: getConfidenceColor(stockAnalysis.confidence) }
+                          ]}>
+                            {Math.round(stockAnalysis.confidence)}%
+                          </Text>
+                          <Text style={styles.confidenceText}>
+                            Confidence in this recommendation
+                          </Text>
+                        </View>
+                      </GlassCard>
                     )}
                   </View>
                 )}
@@ -372,15 +452,40 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell }) => {
                   </View>
                 </GlassCard>
 
-                                 {/* Reason for Recommendation */}
-                 {stockAnalysis?.reason && (
-                   <GlassCard style={styles.reasonCard}>
-                     <Text style={styles.sectionTitle}>Why This Stock?</Text>
-                     <Text style={styles.reasonText}>{stockAnalysis.reason}</Text>
-                   </GlassCard>
-                 )}
+                {/* Recommendation Details */}
+                {(stockAnalysis?.reason || stockAnalysis?.source) && (
+                  <GlassCard style={styles.reasonCard}>
+                    <Text style={styles.sectionTitle}>Recommendation Details</Text>
+                    
+                    {stockAnalysis?.reason && (
+                      <View style={styles.reasonSection}>
+                        <Text style={styles.reasonLabel}>Why This Stock?</Text>
+                        <Text style={styles.reasonText}>{cleanText(stockAnalysis.reason)}</Text>
+                      </View>
+                    )}
+                    
+                    {stockAnalysis?.source && (
+                      <View style={styles.sourceSection}>
+                        <Text style={styles.sourceLabel}>Data Source</Text>
+                        <Text style={styles.sourceText}>{stockAnalysis.source}</Text>
+                      </View>
+                    )}
+                    
+                    {stockAnalysis?.generatedAt && (
+                      <View style={styles.generatedSection}>
+                        <Text style={styles.generatedLabel}>Generated</Text>
+                        <Text style={styles.generatedText}>
+                          {new Date(stockAnalysis.generatedAt).toLocaleDateString()} at{' '}
+                          {new Date(stockAnalysis.generatedAt).toLocaleTimeString()}
+                        </Text>
+                      </View>
+                    )}
+                  </GlassCard>
+                )}
 
-                 {/* Company Profile & Financial Metrics */}
+ 
+
+                {/* Company Profile & Financial Metrics */}
                  {(companyProfile || financialMetrics) && (
                    <GlassCard style={styles.financialCard}>
                      <Text style={styles.sectionTitle}>Company & Financial Data</Text>
@@ -426,7 +531,7 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell }) => {
                        <View style={styles.metricsSection}>
                          <Text style={styles.subsectionTitle}>Financial Metrics</Text>
                          <View style={styles.metricsGrid}>
-                           {financialMetrics.peRatio && (
+                           {financialMetrics.peRatio && financialMetrics.peRatio !== 'N/A' && (
                              <View style={styles.metricItem}>
                                <Text style={styles.metricLabel}>P/E Ratio</Text>
                                <Text style={styles.metricValue}>{financialMetrics.peRatio}</Text>
@@ -460,6 +565,12 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell }) => {
                              <View style={styles.metricItem}>
                                <Text style={styles.metricLabel}>Revenue Growth</Text>
                                <Text style={styles.metricValue}>{financialMetrics.revenueGrowth}%</Text>
+                             </View>
+                           )}
+                           {financialMetrics.dividendYield && financialMetrics.dividendYield !== 'N/A' && (
+                             <View style={styles.metricItem}>
+                               <Text style={styles.metricLabel}>Dividend Yield</Text>
+                               <Text style={styles.metricValue}>{financialMetrics.dividendYield}</Text>
                              </View>
                            )}
                          </View>
@@ -508,20 +619,36 @@ const StockDetailsModal = ({ visible, stock, onClose, user, onSell }) => {
                    </GlassCard>
                  )}
 
-                 {/* Sell Button for Portfolio Holdings */}
-                 {safeStock.shares > 0 && onSell && (
-                   <GlassCard style={styles.actionCard}>
-                     <TouchableOpacity
-                       style={styles.sellButton}
-                       onPress={() => {
-                         onSell(stock);
-                         onClose();
-                       }}
-                     >
-                       <Text style={styles.sellButtonText}>Sell Shares</Text>
-                     </TouchableOpacity>
-                   </GlassCard>
-                 )}
+                 {/* Action Buttons */}
+                 <GlassCard style={styles.actionCard}>
+                   {safeStock.shares > 0 ? (
+                     // Sell Button for Portfolio Holdings
+                     onSell && (
+                       <TouchableOpacity
+                         style={styles.sellButton}
+                         onPress={() => {
+                           onSell(stock);
+                           onClose();
+                         }}
+                       >
+                         <Text style={styles.sellButtonText}>Sell Shares</Text>
+                       </TouchableOpacity>
+                     )
+                   ) : (
+                     // Buy Button for Watchlist Items
+                     onBuy && (
+                       <TouchableOpacity
+                         style={styles.buyButton}
+                         onPress={() => {
+                           onBuy(stock);
+                           onClose();
+                         }}
+                       >
+                         <Text style={styles.buyButtonText}>Buy Shares</Text>
+                       </TouchableOpacity>
+                     )
+                   )}
+                 </GlassCard>
               </>
             )}
           </ScrollView>
@@ -761,11 +888,49 @@ const styles = StyleSheet.create({
   reasonCard: {
     marginBottom: SPACING.lg,
   },
+
+  reasonSection: {
+    marginBottom: SPACING.md,
+  },
+  reasonLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.text.secondary,
+    fontWeight: '600',
+    marginBottom: SPACING.xs,
+  },
   reasonText: {
     ...TYPOGRAPHY.body,
     color: COLORS.text.secondary,
     lineHeight: 22,
     flexWrap: 'wrap',
+  },
+  sourceSection: {
+    marginBottom: SPACING.md,
+  },
+  sourceLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.text.secondary,
+    fontWeight: '600',
+    marginBottom: SPACING.xs,
+  },
+  sourceText: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.primary,
+    fontWeight: '500',
+  },
+  generatedSection: {
+    marginBottom: SPACING.md,
+  },
+  generatedLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.text.secondary,
+    fontWeight: '600',
+    marginBottom: SPACING.xs,
+  },
+  generatedText: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.text.secondary,
+    fontStyle: 'italic',
   },
   actionCard: {
     marginBottom: SPACING.lg,
@@ -777,6 +942,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sellButtonText: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.text.primary,
+    fontWeight: '600',
+  },
+  buyButton: {
+    backgroundColor: COLORS.success,
+    borderRadius: 12,
+    padding: SPACING.md,
+    alignItems: 'center',
+  },
+  buyButtonText: {
     ...TYPOGRAPHY.body,
     color: COLORS.text.primary,
     fontWeight: '600',
@@ -859,13 +1035,14 @@ const styles = StyleSheet.create({
   analysisSection: {
     marginBottom: SPACING.lg,
   },
-  analysisItem: {
+  analysisCard: {
     marginBottom: SPACING.md,
   },
   analysisLabel: {
     ...TYPOGRAPHY.caption,
     color: COLORS.text.secondary,
-    marginBottom: SPACING.xs,
+    fontWeight: '600',
+    marginBottom: SPACING.sm,
   },
   analysisText: {
     ...TYPOGRAPHY.body,
@@ -873,11 +1050,55 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     flexWrap: 'wrap',
   },
-  bulletPoint: {
+  benefitPoint: {
     ...TYPOGRAPHY.body,
-    color: COLORS.text.secondary,
+    color: COLORS.success,
     lineHeight: 22,
     marginLeft: SPACING.md,
+    marginBottom: SPACING.xs,
+  },
+  riskPoint: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.danger,
+    lineHeight: 22,
+    marginLeft: SPACING.md,
+    marginBottom: SPACING.xs,
+  },
+  metricsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
+  metricItem: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    padding: SPACING.sm,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  metricLabel: {
+    ...TYPOGRAPHY.small,
+    color: COLORS.text.secondary,
+    marginBottom: SPACING.xs,
+  },
+  metricValue: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  confidenceContainer: {
+    alignItems: 'center',
+  },
+  confidenceValue: {
+    ...TYPOGRAPHY.h2,
+    fontWeight: '700',
+    marginBottom: SPACING.xs,
+  },
+  confidenceText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
   },
 });
 

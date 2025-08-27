@@ -9,7 +9,8 @@
     "lint": "expo lint",
     "doctor": "expo doctor",
     "clear-cache": "expo start --clear",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "setup-env": "node setup-env.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",

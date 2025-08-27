@@ -166,6 +166,8 @@ export function useApp() {
   return context;
 }
 
+
+
 // Selector hooks for specific state
 export function useUser() {
   const { user, actions } = useApp();

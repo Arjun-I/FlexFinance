@@ -7,6 +7,7 @@ class ApiService {
     this.rateLimitMap = new Map();
     this.requestQueue = [];
     this.isProcessingQueue = false;
+    this.pendingRequests = new Map(); // Request deduplication
     
     // Rate limiting configuration
     this.rateLimits = {
@@ -14,6 +15,11 @@ class ApiService {
       groq: { requests: 10, window: 60000 }, // 10 requests per minute
       firebase: { requests: 100, window: 60000 }, // 100 requests per minute
     };
+  }
+
+  // Request deduplication
+  getRequestKey(service, endpoint, params = {}) {
+    return `${service}:${endpoint}:${JSON.stringify(params)}`;
   }
 
   // Check if we're within rate limits
@@ -107,95 +113,154 @@ class ApiService {
     this.isProcessingQueue = false;
   }
 
-  // Cached request with automatic cache invalidation
-  async cachedRequest(key, requestFn, ttl = 300000) { // 5 minutes default
-    const cached = this.cache.get(key);
-    if (cached && Date.now() - cached.timestamp < ttl) {
-      return cached.data;
+  // Main request method with deduplication and caching
+  async request(service, endpoint, options = {}) {
+    const {
+      method = 'GET',
+      params = {},
+      body = null,
+      headers = {},
+      cache = true,
+      cacheTime = 5 * 60 * 1000, // 5 minutes
+      priority = 0,
+      retries = 3,
+      retryDelay = 1000,
+    } = options;
+
+    const requestKey = this.getRequestKey(service, endpoint, params);
+    
+    // Check for pending request (deduplication)
+    if (this.pendingRequests.has(requestKey)) {
+      return this.pendingRequests.get(requestKey);
     }
 
-    try {
-      const data = await requestFn();
-      this.cache.set(key, {
-        data,
-        timestamp: Date.now(),
-      });
-      return data;
-    } catch (error) {
-      // Return cached data even if expired if request fails
-      if (cached) {
-        console.warn(`Using expired cache for ${key} due to request failure`);
+    // Check cache first
+    if (cache) {
+      const cached = this.cache.get(requestKey);
+      if (cached && Date.now() - cached.timestamp < cacheTime) {
         return cached.data;
       }
-      throw error;
     }
-  }
 
-  // Batch multiple requests efficiently
-  async batchRequests(requests, service) {
-    const results = [];
-    const batchSize = 5; // Process 5 requests at a time
-    
-    for (let i = 0; i < requests.length; i += batchSize) {
-      const batch = requests.slice(i, i + batchSize);
-      const batchPromises = batch.map(request => 
-        this.queueRequest(request.fn, service, request.priority || 0)
-      );
+    // Create request promise
+    const requestPromise = this.executeRequest(service, endpoint, {
+      method,
+      params,
+      body,
+      headers,
+      priority,
+      retries,
+      retryDelay,
+    });
+
+    // Store pending request for deduplication
+    this.pendingRequests.set(requestKey, requestPromise);
+
+    try {
+      const result = await requestPromise;
       
-      const batchResults = await Promise.allSettled(batchPromises);
-      results.push(...batchResults);
-      
-      // Small delay between batches to respect rate limits
-      if (i + batchSize < requests.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+      // Cache successful result
+      if (cache) {
+        this.cache.set(requestKey, {
+          data: result,
+          timestamp: Date.now(),
+        });
       }
+      
+      return result;
+    } finally {
+      // Clean up pending request
+      this.pendingRequests.delete(requestKey);
     }
-    
-    return results;
   }
 
-  // Retry logic with exponential backoff
-  async retryRequest(requestFn, maxRetries = 3, baseDelay = 1000) {
-    let lastError;
+  // Execute request with retry logic
+  async executeRequest(service, endpoint, options) {
+    const { method, params, body, headers, priority, retries, retryDelay } = options;
     
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        return await requestFn();
-      } catch (error) {
-        lastError = error;
-        
-        if (attempt === maxRetries) {
-          break;
+        // Check rate limits
+        if (this.isRateLimited(service)) {
+          const resetTime = this.getRateLimitResetTime(service);
+          await new Promise(resolve => setTimeout(resolve, resetTime));
         }
-        
-        // Don't retry on certain errors
-        if (error.message?.includes('rate limit') || 
-            error.message?.includes('unauthorized') ||
-            error.message?.includes('not found')) {
-          break;
+
+        // Execute request
+        const result = await this.queueRequest(
+          () => this.makeHttpRequest(endpoint, { method, params, body, headers }),
+          service,
+          priority
+        );
+
+        return result;
+      } catch (error) {
+        if (attempt === retries) {
+          throw error;
         }
         
         // Exponential backoff
-        const delay = baseDelay * Math.pow(2, attempt);
+        const delay = retryDelay * Math.pow(2, attempt);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
-    
-    throw lastError;
   }
 
-  // Clear cache for specific keys or all
-  clearCache(pattern = null) {
-    if (pattern) {
-      const keys = Array.from(this.cache.keys());
-      keys.forEach(key => {
-        if (key.includes(pattern)) {
-          this.cache.delete(key);
-        }
+  // Make HTTP request
+  async makeHttpRequest(endpoint, options) {
+    const { method, params, body, headers } = options;
+    
+    const url = new URL(endpoint);
+    if (params) {
+      Object.keys(params).forEach(key => {
+        url.searchParams.append(key, params[key]);
       });
-    } else {
-      this.cache.clear();
     }
+
+    const requestOptions = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+    };
+
+    if (body) {
+      requestOptions.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(url.toString(), requestOptions);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // Batch requests for better performance
+  async batchRequest(requests) {
+    const results = [];
+    const batchPromises = requests.map(async (request, index) => {
+      try {
+        const result = await this.request(
+          request.service,
+          request.endpoint,
+          request.options
+        );
+        results[index] = { success: true, data: result };
+      } catch (error) {
+        results[index] = { success: false, error: error.message };
+      }
+    });
+
+    await Promise.all(batchPromises);
+    return results;
+  }
+
+  // Clear cache
+  clearCache() {
+    this.cache.clear();
   }
 
   // Get cache statistics
@@ -207,43 +272,21 @@ class ApiService {
     };
   }
 
-  // Preload important data
-  async preloadData(userId) {
-    const preloadTasks = [
-      {
-        key: `user-${userId}-profile`,
-        fn: () => this.getUserProfile(userId),
-        priority: 10,
-      },
-      {
-        key: `user-${userId}-portfolio`,
-        fn: () => this.getUserPortfolio(userId),
-        priority: 8,
-      },
-      {
-        key: `user-${userId}-risk-profile`,
-        fn: () => this.getUserRiskProfile(userId),
-        priority: 9,
-      },
-    ];
+  // Get rate limit status
+  getRateLimitStatus(service) {
+    const limit = this.rateLimits[service];
+    if (!limit) return null;
 
-    return this.batchRequests(preloadTasks, 'firebase');
-  }
+    const requests = this.rateLimitMap.get(service) || [];
+    const now = Date.now();
+    const validRequests = requests.filter(time => now - time < limit.window);
 
-  // Mock methods for demonstration (replace with actual implementations)
-  async getUserProfile(userId) {
-    // Implementation would go here
-    return { id: userId, email: 'user@example.com' };
-  }
-
-  async getUserPortfolio(userId) {
-    // Implementation would go here
-    return { holdings: [], cashBalance: 10000 };
-  }
-
-  async getUserRiskProfile(userId) {
-    // Implementation would go here
-    return { riskTolerance: 'medium', timeHorizon: 'long' };
+    return {
+      current: validRequests.length,
+      limit: limit.requests,
+      remaining: Math.max(0, limit.requests - validRequests.length),
+      resetTime: this.getRateLimitResetTime(service),
+    };
   }
 }
 

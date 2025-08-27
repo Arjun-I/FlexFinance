@@ -61,37 +61,10 @@ export class LRUCache {
   size() {
     return this.cache.size;
   }
-}
 
-// Performance monitoring
-export class PerformanceMonitor {
-  constructor() {
-    this.metrics = new Map();
-    this.startTimes = new Map();
-  }
-
-  start(label) {
-    this.startTimes.set(label, performance.now());
-  }
-
-  end(label) {
-    const startTime = this.startTimes.get(label);
-    if (startTime) {
-      const duration = performance.now() - startTime;
-      this.metrics.set(label, duration);
-      this.startTimes.delete(label);
-      return duration;
-    }
-    return 0;
-  }
-
-  getMetrics() {
-    return Object.fromEntries(this.metrics);
-  }
-
-  clear() {
-    this.metrics.clear();
-    this.startTimes.clear();
+  // Get cache hit rate
+  get hitRate() {
+    return this.hits / (this.hits + this.misses);
   }
 }
 
@@ -101,80 +74,35 @@ export const batchOperation = (operations, batchSize = 10) => {
   
   for (let i = 0; i < operations.length; i += batchSize) {
     const batch = operations.slice(i, i + batchSize);
-    const batchResults = batch.map(op => op());
-    results.push(...batchResults);
+    results.push(batch);
   }
   
   return results;
 };
 
-// Optimized array operations
-export const chunkArray = (array, size) => {
-  const chunks = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
-  }
-  return chunks;
-};
-
-// Efficient object cloning
-export const shallowClone = (obj) => {
-  if (obj === null || typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) return [...obj];
-  return { ...obj };
-};
-
-// Deep clone for complex objects
+// Deep clone utility for performance
 export const deepClone = (obj) => {
   if (obj === null || typeof obj !== 'object') return obj;
   if (obj instanceof Date) return new Date(obj.getTime());
-  if (Array.isArray(obj)) return obj.map(item => deepClone(item));
-  
-  const cloned = {};
-  for (const key in obj) {
-    if (obj.hasOwnProperty(key)) {
-      cloned[key] = deepClone(obj[key]);
+  if (obj instanceof Array) return obj.map(item => deepClone(item));
+  if (typeof obj === 'object') {
+    const clonedObj = {};
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        clonedObj[key] = deepClone(obj[key]);
+      }
     }
+    return clonedObj;
   }
-  return cloned;
 };
 
-// Network status monitoring
-export class NetworkMonitor {
-  constructor() {
-    this.isOnline = true;
-    this.listeners = new Set();
+// Shallow clone utility for better performance
+export const shallowClone = (obj) => {
+  if (Array.isArray(obj)) {
+    return [...obj];
   }
-
-  addListener(callback) {
-    this.listeners.add(callback);
-    return () => this.listeners.delete(callback);
+  if (typeof obj === 'object' && obj !== null) {
+    return { ...obj };
   }
-
-  setOnlineStatus(isOnline) {
-    if (this.isOnline !== isOnline) {
-      this.isOnline = isOnline;
-      this.listeners.forEach(callback => callback(isOnline));
-    }
-  }
-
-  checkConnectivity() {
-    return fetch('https://www.google.com/favicon.ico', {
-      method: 'HEAD',
-      timeout: 5000,
-    })
-    .then(() => {
-      this.setOnlineStatus(true);
-      return true;
-    })
-    .catch(() => {
-      this.setOnlineStatus(false);
-      return false;
-    });
-  }
-}
-
-// Export singleton instances
-export const globalCache = new LRUCache(200);
-export const performanceMonitor = new PerformanceMonitor();
-export const networkMonitor = new NetworkMonitor();
+  return obj;
+};

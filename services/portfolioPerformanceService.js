@@ -15,6 +15,55 @@ class PortfolioPerformanceService {
     this.userId = userId;
   }
 
+  // Get current portfolio holdings and calculate performance
+  async getCurrentPortfolioData() {
+    if (!this.userId) {
+      console.error('User ID not set');
+      return null;
+    }
+
+    try {
+      // Get user's current holdings
+      const portfolioRef = collection(db, 'users', this.userId, 'portfolio');
+      const portfolioSnapshot = await getDocs(portfolioRef);
+      
+      const holdings = [];
+      console.log('getCurrentPortfolioData: Processing portfolio snapshot with', portfolioSnapshot.size, 'documents');
+      portfolioSnapshot.forEach(doc => {
+        const data = doc.data();
+        console.log('getCurrentPortfolioData: Processing document:', data.symbol, 'shares:', data.shares, 'sector:', data.sector);
+        if (data.shares > 0) { // Only include actual holdings, not watchlist items
+          holdings.push({
+            id: doc.id,
+            symbol: data.symbol,
+            name: data.name,
+            sector: data.sector || 'Unknown',
+            industry: data.industry || 'Unknown',
+            shares: parseFloat(data.shares) || 0,
+            averagePrice: parseFloat(data.averagePrice) || 0,
+            currentPrice: parseFloat(data.currentPrice) || 0,
+            currentValue: parseFloat(data.currentValue) || 0,
+            gain: parseFloat(data.gain) || 0,
+            gainPercent: parseFloat(data.gainPercent) || 0
+          });
+        }
+      });
+
+      // Get user's cash balance
+      const userDoc = await getDoc(doc(db, 'users', this.userId));
+      const userData = userDoc.data();
+      const cashBalance = parseFloat(userData?.cashBalance) || 0;
+
+      console.log('getCurrentPortfolioData: Final holdings count:', holdings.length);
+      console.log('getCurrentPortfolioData: Holdings with sectors:', holdings.map(h => ({ symbol: h.symbol, sector: h.sector, value: h.currentValue })));
+
+      return { holdings, cashBalance };
+    } catch (error) {
+      console.error('Error getting current portfolio data:', error);
+      return null;
+    }
+  }
+
   // Calculate current portfolio value and performance
   async calculateCurrentPerformance(holdings, cashBalance) {
     if (!holdings || holdings.length === 0) {
@@ -34,25 +83,58 @@ class PortfolioPerformanceService {
       const quotes = await getMultipleQuotes(symbols);
       
       let totalValue = cashBalance;
-      let totalCost = 0;
-      let previousValue = 0;
+      let totalCostBasis = 0;
+      let previousTotalValue = 0;
 
       holdings.forEach(holding => {
         const quote = quotes.find(q => q.symbol === holding.symbol);
         if (quote) {
-          const currentValue = holding.shares * quote.currentPrice;
-          const costBasis = holding.shares * holding.averagePrice;
+          const currentPrice = parseFloat(quote.currentPrice) || parseFloat(quote.price) || holding.currentPrice || 0;
+          const shares = parseFloat(holding.shares) || 0;
+          const averagePrice = parseFloat(holding.averagePrice) || 0;
+          
+          const currentValue = shares * currentPrice;
+          const costBasis = shares * averagePrice;
+          
+          // Calculate previous value using change percent (for daily change calculation)
+          const changePercent = parseFloat(quote.changePercent) || 0;
+          const previousPrice = currentPrice / (1 + (changePercent / 100));
+          const previousValue = shares * previousPrice;
           
           totalValue += currentValue;
-          totalCost += costBasis;
-          previousValue += holding.shares * (holding.currentPrice || holding.averagePrice);
+          totalCostBasis += costBasis;
+          previousTotalValue += previousValue;
+        } else {
+          // If no quote available, use existing data
+          const currentValue = parseFloat(holding.currentValue) || 0;
+          const costBasis = parseFloat(holding.shares) * parseFloat(holding.averagePrice) || 0;
+          
+          totalValue += currentValue;
+          totalCostBasis += costBasis;
+          previousTotalValue += currentValue; // No change data available
         }
       });
 
-      const totalReturn = totalValue - totalCost;
-      const totalReturnPercent = totalCost > 0 ? (totalReturn / totalCost) * 100 : 0;
-      const dailyChange = totalValue - previousValue;
-      const dailyChangePercent = previousValue > 0 ? (dailyChange / previousValue) * 100 : 0;
+      // Calculate returns (equity only, excluding cash)
+      const equityValue = totalValue - cashBalance;
+      const totalReturn = equityValue - totalCostBasis;
+      const totalReturnPercent = totalCostBasis > 0 ? (totalReturn / totalCostBasis) * 100 : 0;
+      // Calculate daily change (equity only, excluding cash)
+      const previousEquityValue = previousTotalValue;
+      const currentEquityValue = totalValue - cashBalance;
+      const dailyChange = currentEquityValue - previousEquityValue;
+      const dailyChangePercent = previousEquityValue > 0 ? (dailyChange / previousEquityValue) * 100 : 0;
+
+      console.log('Portfolio Performance Calculation:', {
+        totalValue,
+        equityValue,
+        cashBalance,
+        totalCostBasis,
+        totalReturn,
+        totalReturnPercent,
+        dailyChange,
+        dailyChangePercent
+      });
 
       return {
         totalValue,
@@ -187,47 +269,128 @@ class PortfolioPerformanceService {
     }
   }
 
-  // Get performance summary
-  async getPerformanceSummary() {
-    const performanceData = await this.getHistoricalPerformance('1M');
-    
-    if (performanceData.length === 0) {
+  // Get portfolio performance with historical data
+  async getPortfolioPerformance(userId) {
+    try {
+      this.setUserId(userId);
+      
+      // Get current performance summary
+      const performanceSummary = await this.getPerformanceSummary();
+      
+      // Get historical data for chart
+      let historicalData = [];
+      try {
+        historicalData = await this.getHistoricalPerformance('1M');
+      } catch (error) {
+        console.warn('Could not load historical data:', error);
+        // Create a simple historical entry from current data
+        if (performanceSummary.currentValue > 0) {
+          const currentDate = new Date().toISOString();
+          historicalData = [{
+            totalValue: performanceSummary.currentValue,
+            date: currentDate,
+            timestamp: currentDate
+          }];
+        }
+      }
+      
+      // Ensure we have valid data
+      const result = {
+        currentValue: performanceSummary.currentValue || 0,
+        totalReturn: performanceSummary.totalReturn || 0,
+        totalReturnPercent: performanceSummary.totalReturnPercent || 0,
+        dailyChange: performanceSummary.dailyChange || 0,
+        dailyChangePercent: performanceSummary.dailyChangePercent || 0,
+        cashBalance: performanceSummary.cashBalance || 0,
+        holdingsCount: performanceSummary.holdingsCount || 0,
+        sectorCount: performanceSummary.sectorCount || 0,
+        bestPerformer: performanceSummary.bestPerformer || 'N/A',
+        portfolioHistory: historicalData || []
+      };
+      
+      console.log('Portfolio performance data:', result);
+      return result;
+    } catch (error) {
+      console.error('Error getting portfolio performance:', error);
       return {
         currentValue: 0,
         totalReturn: 0,
         totalReturnPercent: 0,
-        bestDay: 0,
-        worstDay: 0,
-        volatility: 0
+        dailyChange: 0,
+        dailyChangePercent: 0,
+        cashBalance: 0,
+        holdingsCount: 0,
+        sectorCount: 0,
+        bestPerformer: 'N/A',
+        portfolioHistory: []
       };
     }
+  }
 
-    const current = performanceData[performanceData.length - 1];
-    const first = performanceData[0];
-    
-    // Calculate daily changes
-    const dailyChanges = [];
-    for (let i = 1; i < performanceData.length; i++) {
-      const change = performanceData[i].totalValue - performanceData[i - 1].totalValue;
-      dailyChanges.push(change);
+  // Get performance summary - FIXED to use current holdings
+  async getPerformanceSummary() {
+    try {
+      // Get current portfolio data
+      const portfolioData = await this.getCurrentPortfolioData();
+      if (!portfolioData) {
+        return {
+          currentValue: 0,
+          totalReturn: 0,
+          totalReturnPercent: 0,
+          dailyChange: 0,
+          dailyChangePercent: 0,
+          cashBalance: 0,
+          holdingsCount: 0,
+          sectorCount: 0,
+          bestPerformer: 'N/A'
+        };
+      }
+
+      const { holdings, cashBalance } = portfolioData;
+      
+      // Calculate current performance
+      const performance = await this.calculateCurrentPerformance(holdings, cashBalance);
+      
+      // Calculate additional metrics
+      const holdingsCount = holdings.length;
+      const sectors = [...new Set(holdings.map(h => h.sector).filter(Boolean))];
+      const sectorCount = sectors.length;
+      
+      // Find best performer
+      let bestPerformer = 'N/A';
+      let bestGainPercent = -Infinity;
+      holdings.forEach(holding => {
+        if (holding.gainPercent > bestGainPercent) {
+          bestGainPercent = holding.gainPercent;
+          bestPerformer = holding.symbol;
+        }
+      });
+
+      return {
+        currentValue: performance.totalValue,
+        totalReturn: performance.totalReturn,
+        totalReturnPercent: performance.totalReturnPercent,
+        dailyChange: performance.dailyChange,
+        dailyChangePercent: performance.dailyChangePercent,
+        cashBalance: cashBalance,
+        holdingsCount: holdingsCount,
+        sectorCount: sectorCount,
+        bestPerformer: bestPerformer
+      };
+    } catch (error) {
+      console.error('Error getting performance summary:', error);
+      return {
+        currentValue: 0,
+        totalReturn: 0,
+        totalReturnPercent: 0,
+        dailyChange: 0,
+        dailyChangePercent: 0,
+        cashBalance: 0,
+        holdingsCount: 0,
+        sectorCount: 0,
+        bestPerformer: 'N/A'
+      };
     }
-
-    const bestDay = Math.max(...dailyChanges);
-    const worstDay = Math.min(...dailyChanges);
-    
-    // Calculate volatility (standard deviation of daily returns)
-    const mean = dailyChanges.reduce((sum, change) => sum + change, 0) / dailyChanges.length;
-    const variance = dailyChanges.reduce((sum, change) => sum + Math.pow(change - mean, 2), 0) / dailyChanges.length;
-    const volatility = Math.sqrt(variance);
-
-    return {
-      currentValue: current.totalValue,
-      totalReturn: current.totalReturn,
-      totalReturnPercent: current.totalReturnPercent,
-      bestDay,
-      worstDay,
-      volatility
-    };
   }
 
   // Generate chart data for portfolio performance
@@ -256,6 +419,60 @@ class PortfolioPerformanceService {
     const performance = await this.calculateCurrentPerformance(holdings, cashBalance);
     await this.savePerformanceSnapshot(performance);
     return performance;
+  }
+
+  // Get sector holdings data for pie chart
+  async getSectorHoldings() {
+    try {
+      console.log('getSectorHoldings: Starting...');
+      const portfolioData = await this.getCurrentPortfolioData();
+      console.log('getSectorHoldings: Portfolio data:', portfolioData);
+      
+      if (!portfolioData || !portfolioData.holdings) {
+        console.log('getSectorHoldings: No portfolio data or holdings');
+        return [];
+      }
+
+      const { holdings } = portfolioData;
+      
+      // Group holdings by sector and calculate total value
+      const sectorMap = new Map();
+      
+      console.log('getSectorHoldings: Processing holdings:', holdings.length);
+      holdings.forEach(holding => {
+        const sector = holding.sector || 'Unknown';
+        const currentValue = parseFloat(holding.currentValue) || 0;
+        console.log(`getSectorHoldings: Processing ${holding.symbol} - Sector: ${sector}, Value: ${currentValue}`);
+        
+        if (sectorMap.has(sector)) {
+          sectorMap.set(sector, sectorMap.get(sector) + currentValue);
+        } else {
+          sectorMap.set(sector, currentValue);
+        }
+      });
+
+      // Convert to array and sort by value
+      const sectorData = Array.from(sectorMap.entries())
+        .map(([sector, value]) => ({
+          sector,
+          value,
+          percentage: 0 // Will be calculated below
+        }))
+        .filter(item => item.value > 0)
+        .sort((a, b) => b.value - a.value);
+
+      // Calculate percentages
+      const totalValue = sectorData.reduce((sum, item) => sum + item.value, 0);
+      sectorData.forEach(item => {
+        item.percentage = totalValue > 0 ? (item.value / totalValue) * 100 : 0;
+      });
+
+      console.log('Sector holdings data:', sectorData);
+      return sectorData;
+    } catch (error) {
+      console.error('Error getting sector holdings:', error);
+      return [];
+    }
   }
 
   // Clear cache

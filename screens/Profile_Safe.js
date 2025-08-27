@@ -229,8 +229,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: SPACING.md,
-    paddingBottom: SPACING.xxl,
+    padding: SPACING.lg,
+    paddingBottom: 120,
   },
   loadingContainer: {
     flex: 1,
@@ -256,9 +256,20 @@ const styles = StyleSheet.create({
     color: COLORS.text.accent,
   },
   glassCard: {
-    borderRadius: 20,
-    marginBottom: SPACING.md,
+    borderRadius: 24,
+    marginBottom: SPACING.lg,
     overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.25,
+        shadowRadius: 24,
+      },
+      android: {
+        elevation: 12,
+      },
+    }),
   },
   cardBorder: {
     borderWidth: 1,

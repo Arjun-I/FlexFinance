@@ -431,7 +431,8 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-    padding: 20,
+    padding: SPACING.lg,
+    paddingBottom: 120,
   },
   loadingContainer: {
     flex: 1,

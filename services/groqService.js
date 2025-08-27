@@ -44,15 +44,15 @@ class GroqService {
           messages: [
             {
               role: 'system',
-              content: 'You are a financial advisor. Always respond with valid JSON.'
+              content: 'You are a financial advisor. Provide clear, concise responses without JSON formatting unless specifically requested.'
             },
             {
               role: 'user',
               content: prompt
             }
           ],
-                  temperature: 0.7,
-        max_tokens: Math.max(maxTokens, 4000), // Ensure minimum 4000 tokens for complex JSON
+          temperature: 0.7,
+          max_tokens: Math.max(maxTokens, 4000), // Ensure minimum 4000 tokens for complex responses
         }),
       });
 
@@ -67,8 +67,13 @@ class GroqService {
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content;
       
+      if (!content) {
+        console.error('No content in Groq response:', data);
+        throw new Error('No content received from Groq API');
+      }
+      
       console.log('Groq API call successful');
-      console.log('📝 Response content preview:', content?.substring(0, 200) + '...');
+      console.log('📝 Response content preview:', content.substring(0, 200) + '...');
       
       return content;
     } catch (error) {
@@ -81,9 +86,40 @@ class GroqService {
     try {
       const risk = context?.riskProfile || {};
       const prefs = context?.userPreferences || {};
-      const liked = (prefs.likedStocks || []).slice(0, 10).join(', ');
-      const rejected = (prefs.rejectedStocks || []).slice(0, 10).join(', ');
-      const portfolio = (prefs.portfolio || []).map(p => `${p.symbol}:${p.shares}`).slice(0, 10).join(', ');
+      const liked = (context?.likedStocks || []).slice(0, 10);
+      const rejected = (context?.rejectedStocks || []).slice(0, 10);
+      const portfolio = (context?.portfolioSectors || []).slice(0, 10);
+      const goals = (context?.investmentGoals || []).slice(0, 5);
+
+      // Analyze user preferences to make recommendations more adaptive
+      const likedSectors = liked.map(stock => {
+        // Extract sector from liked stocks if available
+        return stock.sector || 'unknown';
+      }).filter(sector => sector !== 'unknown');
+      
+      const rejectedSectors = rejected.map(stock => {
+        return stock.sector || 'unknown';
+      }).filter(sector => sector !== 'unknown');
+
+      // Create adaptive instructions based on user behavior
+      let adaptiveInstructions = '';
+      
+      if (likedSectors.length > 0) {
+        const sectorCounts = {};
+        likedSectors.forEach(sector => {
+          sectorCounts[sector] = (sectorCounts[sector] || 0) + 1;
+        });
+        const preferredSectors = Object.keys(sectorCounts).sort((a, b) => sectorCounts[b] - sectorCounts[a]);
+        adaptiveInstructions += `\n- User prefers: ${preferredSectors.slice(0, 3).join(', ')} sectors`;
+      }
+      
+      if (rejectedSectors.length > 0) {
+        adaptiveInstructions += `\n- User avoids: ${rejectedSectors.slice(0, 3).join(', ')} sectors`;
+      }
+      
+      if (portfolio.length > 0) {
+        adaptiveInstructions += `\n- Current portfolio sectors: ${portfolio.join(', ')}`;
+      }
 
       return `
 User Context:
@@ -92,11 +128,18 @@ User Context:
 - Knowledge: ${risk.knowledge ?? 'n/a'}
 - Ethics: ${risk.ethics ?? 'n/a'}
 - Liquidity: ${risk.liquidity ?? 'n/a'}
-- Liked Stocks: ${liked || 'none'}
-- Rejected Stocks: ${rejected || 'none'}
-- Current Portfolio: ${portfolio || 'none'}
+- Investment Goals: ${goals.join(', ') || 'none'}
+- Liked Stocks: ${liked.map(s => s.symbol || s).join(', ') || 'none'}
+- Rejected Stocks: ${rejected.map(s => s.symbol || s).join(', ') || 'none'}
+${adaptiveInstructions}
 
-Instructions: Tailor recommendations to the risk profile. If volatility is low, favor large-cap, dividend, defensive sectors. If high, allow more growth/volatility. Avoid sectors implied by rejections. Diversify across sectors.
+ADAPTIVE INSTRUCTIONS: 
+- Learn from user's liked/rejected patterns to suggest similar or complementary stocks
+- If user likes tech stocks, suggest more tech but also diversify into related sectors
+- If user rejects high-volatility stocks, focus on stable, established companies
+- Consider current portfolio gaps and suggest stocks that fill those gaps
+- Balance user preferences with diversification needs
+- Adapt to user's risk tolerance and investment goals
 `;
     } catch {
       return '';
@@ -121,7 +164,7 @@ Instructions: Tailor recommendations to the risk profile. If volatility is low, 
     const prompt = `Generate ${maxRecommendations} stock recommendations for the user below.
 ${contextSnippet}${exclusionText}
 
-Return ONLY a JSON array with exactly ${maxRecommendations} objects. Include accurate market cap estimates:
+Return ONLY a valid JSON array with exactly ${maxRecommendations} objects. DO NOT include prices - only fundamental analysis:
 [
   {
     "symbol": "AAPL",
@@ -129,20 +172,17 @@ Return ONLY a JSON array with exactly ${maxRecommendations} objects. Include acc
     "sector": "Technology",
     "industry": "Consumer Electronics",
     "reason": "Brief reason for this user's risk profile",
-    "analysis": "Short analysis",
     "riskLevel": "low",
     "confidence": 0.8,
-    "marketCap": "large",
-    "marketCapBillions": null,
-    "growthPotential": "medium",
-    "investmentHorizon": "long-term",
-    "keyRisks": ["Risk1", "Risk2"],
-    "keyBenefits": ["Benefit1", "Benefit2"],
-    "targetPrice": null,
-    "dividendYield": "1.5%",
-    "recommendation": "buy"
+    "marketCap": "large"
   }
 ]
+
+CRITICAL: 
+- Never include prices, targetPrice, or financial metrics 
+- Keep responses concise to avoid truncation
+- Ensure valid JSON format
+- Never include stocks from the exclusion list
 
 CRITICAL: Never include stocks from the exclusion list above. Generate completely different alternatives if needed.`;
 
@@ -152,18 +192,59 @@ CRITICAL: Never include stocks from the exclusion list above. Generate completel
 
   parseRecommendations(response) {
     try {
+      console.log('📝 Response content preview:', response.substring(0, 200));
+      
       // Clean the response and extract JSON
       let jsonString = response.trim();
       
-      // Remove common prefixes
+      // Remove common prefixes and markdown
       jsonString = jsonString.replace(/^.*?(?=\[)/s, '');
+      jsonString = jsonString.replace(/```json\s*/g, '');
+      jsonString = jsonString.replace(/```\s*/g, '');
       
       // Find the JSON array bounds more carefully
       const startIdx = jsonString.indexOf('[');
-      const lastIdx = jsonString.lastIndexOf(']');
+      let lastIdx = jsonString.lastIndexOf(']');
       
-      if (startIdx === -1 || lastIdx === -1 || startIdx >= lastIdx) {
-        throw new Error('No valid JSON array found in response');
+      if (startIdx === -1) {
+        throw new Error('No opening bracket found in response');
+      }
+      
+      if (lastIdx === -1 || lastIdx <= startIdx) {
+        // Try to find the last valid position before truncation
+        const partialString = jsonString.substring(startIdx);
+        const objects = [];
+        let currentPos = 1; // Skip opening bracket
+        let braceCount = 0;
+        let currentObject = '';
+        
+        for (let i = currentPos; i < partialString.length; i++) {
+          const char = partialString[i];
+          if (char === '{') {
+            braceCount++;
+            currentObject += char;
+          } else if (char === '}') {
+            braceCount--;
+            currentObject += char;
+            if (braceCount === 0) {
+              try {
+                const obj = JSON.parse(currentObject);
+                objects.push(obj);
+                currentObject = '';
+              } catch (e) {
+                console.log('Skipping malformed object:', currentObject.substring(0, 50));
+              }
+            }
+          } else if (braceCount > 0) {
+            currentObject += char;
+          }
+        }
+        
+        if (objects.length > 0) {
+          console.log(`Recovered ${objects.length} valid objects from truncated response`);
+          return objects;
+        }
+        throw new Error('Could not recover any valid objects from response');
       }
       
       jsonString = jsonString.substring(startIdx, lastIdx + 1);
@@ -217,6 +298,16 @@ CRITICAL: Never include stocks from the exclusion list above. Generate completel
       console.error('Raw response length:', response.length);
       console.error('Raw response preview:', response.substring(0, 500));
       throw error;
+    }
+  }
+
+  // Generate text using Groq LLM
+  async generateText(prompt, maxTokens = 500) {
+    try {
+      return await this.callLLM(prompt, maxTokens);
+    } catch (error) {
+      console.error('Error generating text:', error);
+      return null;
     }
   }
 }

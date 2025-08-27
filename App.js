@@ -51,7 +51,6 @@ function AppContent() {
   const [loading, setLoading] = useState(true);
   const [currentScreen, setCurrentScreen] = useState('Dashboard');
   const [initializationStage, setInitializationStage] = useState('Starting...');
-  const [authStateDebounce, setAuthStateDebounce] = useState(null);
   
   // Login form state
   const [email, setEmail] = useState('');
@@ -60,90 +59,93 @@ function AppContent() {
   const [isLogin, setIsLogin] = useState(true);
   const [formLoading, setFormLoading] = useState(false);
 
+  // Simplified auth state management to prevent loops
   useEffect(() => {
     let unsubscribe = null;
+    let hasInitialized = false;
     
     const initializeApp = async () => {
       try {
         setInitializationStage('Setting up authentication...');
         
-        // Set up auth listener with better error handling and state management
+        // Ensure Firebase is properly initialized
+        if (!auth) {
+          console.error('Firebase Auth not initialized');
+          setError('Firebase configuration is missing. Please check your .env file and restart the app.');
+          setLoading(false);
+          return;
+        }
+        
+        // Set up auth listener with proper state management
         unsubscribe = onAuthStateChanged(auth, async (authUser) => {
           console.log('Auth state changed:', authUser ? `Logged in as ${authUser.email}` : 'Logged out');
           
-          // Debounce auth state changes to prevent rapid firing
-          if (authStateDebounce) {
-            clearTimeout(authStateDebounce);
-          }
-          
-          const timeoutId = setTimeout(async () => {
-            // Always update user state when auth changes
+          try {
+            // Update user state
+            console.log('Setting user state:', authUser ? authUser.email : 'null');
             setUser(authUser);
             
-            // Only process user-specific logic if we have a user
             if (authUser) {
+              setInitializationStage('Checking user profile...');
+              
               try {
-                setInitializationStage('Checking user profile...');
-              
-              // Add timeout to prevent hanging on network issues
-              const userDocRef = doc(db, 'users', authUser.uid);
-              const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Profile check timeout')), 10000)
-              );
-              
-              const userSnap = await Promise.race([
-                getDoc(userDocRef),
-                timeoutPromise
-              ]);
-              
-              if (!userSnap.exists() || !userSnap.data()?.riskProfile) {
-                console.log('New user detected - directing to Risk Quiz');
-                setCurrentScreen('RiskQuiz');
-              } else {
-                console.log('Existing user - showing Dashboard');
+                // Check user profile with timeout
+                const userDocRef = doc(db, 'users', authUser.uid);
+                const userSnap = await Promise.race([
+                  getDoc(userDocRef),
+                  new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Profile check timeout')), 5000)
+                  )
+                ]);
+                
+                if (!userSnap.exists() || !userSnap.data()?.riskProfile) {
+                  console.log('New user - directing to Risk Quiz');
+                  setCurrentScreen('RiskQuiz');
+                } else {
+                  console.log('Existing user - showing Dashboard');
+                  setCurrentScreen('Dashboard');
+                }
+              } catch (profileError) {
+                console.log('Profile check failed - defaulting to Dashboard');
                 setCurrentScreen('Dashboard');
               }
-            } catch (error) {
-              console.error('Error checking user profile:', error);
-              // For network errors, assume new user and show Dashboard first
-              if (error.message?.includes('network') || error.message?.includes('timeout')) {
-                console.log('Network issue - defaulting to Dashboard, user can access Risk Quiz later');
-              } else {
-                console.log('Profile check failed - defaulting to Dashboard');
-              }
+            } else {
+              // User is logged out
               setCurrentScreen('Dashboard');
+              setInitializationStage('Ready');
             }
-          } else {
-            // User is logged out, reset to clean state
+            
+            // Only set hasInitialized on first load, not on auth state changes
+            if (!hasInitialized) {
+              hasInitialized = true;
+            }
+            setLoading(false);
+            
+          } catch (error) {
+            console.error('Error in auth state handler:', error);
+            if (!hasInitialized) {
+              hasInitialized = true;
+            }
+            setLoading(false);
             setCurrentScreen('Dashboard');
-            setInitializationStage('Starting...');
           }
-          
-          setLoading(false);
-        }, 300); // 300ms debounce
+        });
         
-        setAuthStateDebounce(timeoutId);
-      });
+      } catch (err) {
+        console.error('App initialization failed:', err);
+        setError('Failed to initialize app. Please restart.');
+        setLoading(false);
+      }
+    };
 
-    } catch (err) {
-      console.error('App initialization failed:', err);
-      setError(`Initialization failed: ${err.message}`);
-      setLoading(false);
-    }
-  };
+    initializeApp();
 
-  initializeApp();
-  
-  // Cleanup function
-  return () => {
-    if (unsubscribe) {
-      unsubscribe();
-    }
-    if (authStateDebounce) {
-      clearTimeout(authStateDebounce);
-    }
-  };
-}, [setUser, setError, authStateDebounce]);
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [setUser, setError]);
 
   const createUserProfileIfMissing = async (uid, email) => {
     const userRef = doc(db, 'users', uid);
@@ -164,33 +166,6 @@ function AppContent() {
       },
       { merge: true }
     );
-  };
-
-  // Simple network connectivity test (non-blocking)
-  const checkNetworkConnectivity = async () => {
-    try {
-      // Quick DNS resolution test
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000); // Reduced timeout
-      
-      await fetch('https://www.google.com/favicon.ico', {
-        method: 'HEAD',
-        signal: controller.signal,
-        cache: 'no-cache'
-      });
-      
-      clearTimeout(timeoutId);
-      console.log('Network connectivity confirmed');
-      return true;
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        console.log('Network check timed out - proceeding with auth anyway');
-      } else {
-        console.log('Network connectivity check failed (non-critical):', error.message);
-      }
-      // Always return true - don't block authentication for network check failures
-      return true;
-    }
   };
 
   const handleLogin = async () => {
@@ -218,9 +193,6 @@ function AppContent() {
     
     console.log('Attempting login...');
     
-    // Quick network connectivity check (non-blocking)
-    checkNetworkConnectivity(); // Don't await - let it run in background
-
     // Add timeout wrapper for auth operations (reduced timeout for faster feedback)
     const authWithTimeout = async (authOperation) => {
       const timeoutPromise = new Promise((_, reject) => 
@@ -364,9 +336,6 @@ function AppContent() {
     
     console.log('Attempting account creation...');
     
-    // Quick network connectivity check (non-blocking)
-    checkNetworkConnectivity(); // Don't await - let it run in background
-
     // Add timeout wrapper for auth operations (reduced timeout for faster feedback)
     const authWithTimeout = async (authOperation) => {
       const timeoutPromise = new Promise((_, reject) => 
@@ -595,6 +564,7 @@ function AppContent() {
         onRemove={removeNotification} 
       />
       
+      {console.log('Render state - loading:', loading, 'user:', user?.email, 'error:', error)}
       {loading ? (
         <EnhancedLoadingScreen 
           message={initializationStage}
@@ -608,59 +578,7 @@ function AppContent() {
         </View>
       ) : user ? (
         <View style={styles.appContainer}>
-          {/* Navigation Header */}
-          <View style={styles.navigationHeader}>
-            <Text style={styles.headerTitle}>FlexFinance</Text>
-            <View style={styles.navigationButtons}>
-              <TouchableOpacity 
-                style={[styles.navButton, currentScreen === 'Dashboard' && styles.activeNavButton]} 
-                onPress={() => {
-                  console.log('Navigating to Dashboard');
-                  setCurrentScreen('Dashboard');
-                }}
-              >
-                <Text style={[styles.navButtonText, currentScreen === 'Dashboard' && styles.activeNavButtonText]}>
-                  Dashboard
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.navButton, currentScreen === 'StockComparison' && styles.activeNavButton]} 
-                onPress={() => {
-                  console.log('Navigating to StockComparison');
-                  setCurrentScreen('StockComparison');
-                }}
-              >
-                <Text style={[styles.navButtonText, currentScreen === 'StockComparison' && styles.activeNavButtonText]}>
-                  Discover
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.navButton, currentScreen === 'Portfolio' && styles.activeNavButton]} 
-                onPress={() => {
-                  console.log('Navigating to Portfolio');
-                  setCurrentScreen('Portfolio');
-                }}
-              >
-                <Text style={[styles.navButtonText, currentScreen === 'Portfolio' && styles.activeNavButtonText]}>
-                  Portfolio
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.navButton, currentScreen === 'Profile' && styles.activeNavButton]} 
-                onPress={() => {
-                  console.log('Navigating to Profile');
-                  setCurrentScreen('Profile');
-                }}
-              >
-                <Text style={[styles.navButtonText, currentScreen === 'Profile' && styles.activeNavButtonText]}>
-                  Profile
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity style={styles.logoutButton} onPress={handleSignOut}>
-              <Text style={styles.logoutButtonText}>Logout</Text>
-            </TouchableOpacity>
-          </View>
+
 
           {/* Main Content */}
           <View style={styles.content}>
@@ -756,54 +674,7 @@ const styles = StyleSheet.create({
   appContainer: {
     flex: 1,
   },
-  navigationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 20,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  navigationButtons: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  navButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  activeNavButton: {
-    backgroundColor: '#00d4ff',
-  },
-  navButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  activeNavButtonText: {
-    color: '#ffffff',
-  },
-  logoutButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255,107,107,0.2)',
-  },
-  logoutButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#ff6b6b',
-  },
+
   content: {
     flex: 1,
   },
